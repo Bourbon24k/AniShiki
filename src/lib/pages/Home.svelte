@@ -26,8 +26,8 @@
 	onMount(async () => {
 		if (anixApi) {
 			try {
-				const data = await anixApi.release.getLastReleases(args.typeReleases, 1, 20);
-				releases = data.releases || [];
+				const data = await anixApi.discover.getWatching(0);
+				releases = data.content || [];
 			} catch (error) {
 				console.error('Error loading releases:', error);
 			} finally {

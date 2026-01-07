@@ -47,11 +47,13 @@
         if (!api) return;
         isLoading = true;
         try {
-            const [interesting, discussing, watching, weeklyComments] = await Promise.all([
+            const [interesting, discussing, watching, weeklyComments, popular, weekCollections] = await Promise.all([
                 api.discover.getInteresting().catch(() => ({ content: [] })),
                 api.discover.getDiscussing().catch(() => ({ content: [] })),
                 api.discover.getWatching(0).catch(() => ({ content: [] })),
-                api.discover.getComments ? api.discover.getComments(0).catch(() => ({ content: [] })) : Promise.resolve({ content: [] })
+                api.discover.getComments ? api.discover.getComments(0).catch(() => ({ content: [] })) : Promise.resolve({ content: [] }),
+                api.release.filter(0, { sort: 1, status_id: null, category_id: null }, true).catch(() => ({ content: [] })),
+                api.collection.all(0, 4).catch(() => ({ content: [] }))
             ]);
             
             console.log('Interesting:', interesting);
@@ -61,11 +63,13 @@
                 interesting: interesting.content || interesting.releases || [],
                 discussing: discussing.content || [],
                 watching: watching.content || [],
-                comments: weeklyComments.content || []
+                comments: weeklyComments.content || [],
+                popular: popular.content || popular.releases || [],
+                collections: weekCollections.content || []
             };
         } catch (e) {
             console.error('Error loading discover:', e);
-            discoverData = { interesting: [], discussing: [], watching: [], comments: [] };
+            discoverData = { interesting: [], discussing: [], watching: [], comments: [], popular: [], collections: [] };
         }
         isLoading = false;
     }
@@ -83,7 +87,7 @@
         {#if discoverData.interesting.length > 0}
             <section class="carousel-section">
                 <div class="carousel">
-                    <button class="carousel-btn prev" on:click={prevSlide}>
+                    <button class="carousel-btn prev" on:click={prevSlide} aria-label="Предыдущий">
                         <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
                             <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
                         </svg>
@@ -107,11 +111,69 @@
                             </a>
                         {/each}
                     </div>
-                    <button class="carousel-btn next" on:click={nextSlide}>
+                    <button class="carousel-btn next" on:click={nextSlide} aria-label="Следующий">
                         <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
                             <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
                         </svg>
                     </button>
+                </div>
+            </section>
+        {/if}
+
+        <section class="quick-actions">
+            <a class="action-btn action-btn--popular" href="/?type=5">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                    <path d="M13.5 0.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.41-1.67-3.41-3.73L7.5 2.1C4.18 4.08 2 7.67 2 11.5 2 17.3 6.7 22 12.5 22S23 17.3 23 11.5c0-4.02-2.34-7.78-6.5-10.83z"/>
+                </svg>
+                <span class="action-text">Популярное</span>
+            </a>
+            <a class="action-btn action-btn--schedule" href="/schedule">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                    <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/>
+                </svg>
+                <span class="action-text">Расписание</span>
+            </a>
+            <a class="action-btn action-btn--collections" href="/collections">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                    <path d="M4 6h16V4H4v2zm0 14h16v-6H4v6zm0-8h16V8H4v4z"/>
+                </svg>
+                <span class="action-text">Коллекции</span>
+            </a>
+            <a class="action-btn action-btn--filter" href="/search">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                    <path d="M10 18h4v-2h-4v2zm-7-8v2h18v-2H3zm3-6v2h12V4H6z"/>
+                </svg>
+                <span class="action-text">Фильтр</span>
+            </a>
+        </section>
+
+        {#if discoverData.popular?.length > 0}
+            <section class="section">
+                <div class="section-header">
+                    <h2 class="section-title">Популярное</h2>
+                    <a href="/?type=5" class="view-all">Посмотреть всё</a>
+                </div>
+                <div class="popular-grid">
+                    {#each discoverData.popular.slice(0, 6) as anime}
+                        <AnimeCard {anime} type="grid" />
+                    {/each}
+                </div>
+            </section>
+        {/if}
+
+        {#if discoverData.collections?.length > 0}
+            <section class="section">
+                <div class="section-header">
+                    <h2 class="section-title">Коллекции недели</h2>
+                    <a href="/collections" class="view-all">Посмотреть всё</a>
+                </div>
+                <div class="collections-grid">
+                    {#each discoverData.collections.slice(0, 6) as c}
+                        <a class="collection-card" href="/collection/{c.id}">
+                            <img class="collection-img" src={c.image} alt={c.title} loading="lazy" />
+                            <div class="collection-title">{c.title}</div>
+                        </a>
+                    {/each}
                 </div>
             </section>
         {/if}
@@ -201,6 +263,99 @@
         padding: 20px;
     }
 
+    .quick-actions {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin: 10px 0 30px;
+    }
+
+    .action-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 14px;
+        border-radius: 14px;
+        color: white;
+        text-decoration: none;
+        transition: filter 0.2s;
+        font-weight: 600;
+    }
+
+    .action-btn:hover {
+        filter: brightness(1.1);
+    }
+
+    .action-btn--popular {
+        background: #d6a000;
+    }
+
+    .action-btn--schedule {
+        background: #2f6bff;
+    }
+
+    .action-btn--collections {
+        background: #7b3ff2;
+    }
+
+    .action-btn--filter {
+        background: #2bb673;
+    }
+
+    @media (max-width: 768px) {
+        .quick-actions {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    .popular-grid {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 16px;
+    }
+
+    .collections-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+    }
+
+    .collection-card {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 14px;
+        border-radius: 14px;
+        background: var(--alt-background-color);
+        color: inherit;
+        text-decoration: none;
+        transition: filter 0.2s;
+    }
+
+    .collection-card:hover {
+        filter: brightness(1.1);
+    }
+
+    .collection-img {
+        width: 100%;
+        height: 140px;
+        border-radius: 12px;
+        object-fit: cover;
+        background: var(--background-color);
+    }
+
+    .collection-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text-color);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
     .section {
         margin-bottom: 40px;
     }
@@ -230,28 +385,7 @@
     }
 
     /* Carousel */
-    .carousel-section {
-        margin-bottom: 40px;
-    }
-
-    .carousel {
-        position: relative;
-        display: flex;
-        align-items: center;
-        gap: 16px;
-    }
-
     .carousel-btn {
-        flex-shrink: 0;
-        width: 44px;
-        height: 44px;
-        border-radius: 50%;
-        border: none;
-        background: var(--alt-background-color);
-        color: var(--text-color);
-        cursor: pointer;
-        display: flex;
-        align-items: center;
         justify-content: center;
         transition: all 0.2s;
         z-index: 5;
@@ -533,6 +667,14 @@
             grid-template-columns: repeat(4, 1fr);
         }
 
+        .popular-grid {
+            grid-template-columns: repeat(4, 1fr);
+        }
+
+        .collections-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
         .carousel-track {
             height: 260px;
         }
@@ -551,6 +693,19 @@
         .discover-page {
             padding: 16px;
             padding-top: 20px;
+        }
+
+        .quick-actions {
+            grid-template-columns: 1fr;
+        }
+
+        .popular-grid {
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        .collections-grid {
+            grid-template-columns: 1fr;
         }
 
         .carousel-section {

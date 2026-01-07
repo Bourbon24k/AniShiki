@@ -15,6 +15,45 @@
     let isLoadingMore = false;
     let api = null;
 
+    function resolveNotificationText(n) {
+        if (!n) return 'Уведомление';
+
+        if (n.by_profile) {
+            const who = n.by_profile?.login || 'Пользователь';
+            const status = n.status || '';
+            if (status) return `${who}: ${status}`;
+            return `${who}: заявка в друзья`;
+        }
+
+        if (n.release) {
+            const rel = typeof n.release === 'object' ? n.release : null;
+            const title = rel?.title_ru || rel?.title_original || `релиз #${n.release}`;
+            return `Связанный релиз: ${title}`;
+        }
+
+        if (n.article) {
+            return 'Новая статья';
+        }
+
+        return n.text || 'Уведомление';
+    }
+
+    function resolveNotificationPoster(n) {
+        if (!n) return null;
+        if (n.release && typeof n.release === 'object') return n.release.image;
+        return null;
+    }
+
+    function resolveNotificationHref(n) {
+        if (!n) return null;
+        if (n.release) {
+            const id = typeof n.release === 'object' ? n.release.id : n.release;
+            if (id != null) return `/release/${id}`;
+        }
+        if (n.by_profile?.id != null) return `/profile/${n.by_profile.id}`;
+        return null;
+    }
+
     onMount(async () => {
         if (browser) {
             if (!utoken) {
@@ -32,7 +71,10 @@
         try {
             const data = await api.notification.getNotifications(page);
             notifications = data.content || [];
-            // Reset notification count after viewing
+            try {
+                await api.notification.readNotifications();
+            } catch (_) {
+            }
             notificationCount.set(0);
         } catch (e) {
             console.error('Error loading notifications:', e);
@@ -96,6 +138,8 @@
         {:else}
             <div class="notifications-list">
                 {#each notifications as notification (notification.id)}
+                    {@const href = resolveNotificationHref(notification)}
+                    {@const poster = resolveNotificationPoster(notification)}
                     <div class="notification-item">
                         <div class="notification-icon">
                             <svg viewBox="0 0 24 24" fill="currentColor">
@@ -103,14 +147,20 @@
                             </svg>
                         </div>
                         <div class="notification-content">
-                            <p class="notification-text">{notification.message || notification.text || 'Уведомление'}</p>
+                            <p class="notification-text">{resolveNotificationText(notification)}</p>
                             {#if notification.timestamp}
                                 <span class="notification-time">{returnTimeString(notification.timestamp * 1000)}</span>
                             {/if}
                         </div>
-                        {#if notification.release}
-                            <a href="/release/{notification.release.id}" class="notification-link">
-                                <img src={notification.release.image} alt="" class="notification-poster" />
+                        {#if href && poster}
+                            <a href={href} class="notification-link">
+                                <img src={poster} alt="" class="notification-poster" />
+                            </a>
+                        {:else if href}
+                            <a href={href} class="notification-link">
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+                                    <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+                                </svg>
                             </a>
                         {/if}
                     </div>

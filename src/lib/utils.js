@@ -200,12 +200,18 @@ export function returnFormatedTime(time) {
 }
 
 export async function checkGPUSupport() {
-    if (typeof navigator === 'undefined' || !navigator.gpu) {
+    if (typeof navigator === 'undefined') {
         console.warn("WebGPU не поддерживается в этом браузере.");
         return false;
     }
 
-    return navigator.gpu
+    const gpu = Reflect.get(navigator, 'gpu');
+    if (!gpu) {
+        console.warn("WebGPU не поддерживается в этом браузере.");
+        return false;
+    }
+
+    return gpu
         .requestAdapter()
         .then((adapter) => {
             return adapter !== null;

@@ -72,7 +72,7 @@
             <select 
                 class="sort-select"
                 bind:value={selectedSort}
-                on:change={(e) => setSort(parseInt(e.target.value))}
+                on:change={(e) => setSort(parseInt(/** @type {HTMLSelectElement} */ (e.currentTarget).value))}
             >
                 {#each collectionSortValues as option}
                     <option value={option.value}>{option.label}</option>

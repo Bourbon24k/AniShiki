@@ -32,7 +32,6 @@
     onMount(() => {
         if (browser) {
             api = getApi();
-            loadRelease();
             
             // Close bookmark menu on click outside
             document.addEventListener('click', handleClickOutside);
@@ -59,9 +58,35 @@
     let isLoadingComments = false;
     let hasMoreComments = false;
 
-    async function loadRelease() {
+    // Comment replies state
+    let expandedReplies = {};
+    let commentReplies = {};
+
+    let loadedReleaseId = null;
+
+    async function loadRelease(options = {}) {
         if (!api) return;
-        isLoading = true;
+
+        const silent = !!options?.silent;
+
+        if (loadedReleaseId !== releaseId) {
+            loadedReleaseId = releaseId;
+            release = null;
+            showBookmarkMenu = false;
+            showAllComments = false;
+            showAllRelated = false;
+            videos = [];
+            allComments = [];
+            commentsPage = 0;
+            isLoadingComments = false;
+            hasMoreComments = false;
+            expandedReplies = {};
+            commentReplies = {};
+        }
+
+        if (!silent) {
+            isLoading = true;
+        }
         error = null;
         try {
             const data = await api.release.info(releaseId, true);
@@ -84,7 +109,7 @@
                 // Initialize all comments with first batch
                 allComments = release.comments || [];
                 commentsPage = 0;
-                hasMoreComments = (release.comment_count || 0) > allComments.length;
+                hasMoreComments = ((release.comments_count ?? release.comment_count) || 0) > allComments.length;
             } else {
                 error = 'Релиз не найден';
             }
@@ -92,7 +117,13 @@
             console.error('Error loading release:', e);
             error = 'Ошибка загрузки релиза';
         }
-        isLoading = false;
+        if (!silent) {
+            isLoading = false;
+        }
+    }
+
+    $: if (browser && api && releaseId) {
+        loadRelease();
     }
 
     function goBack() {
@@ -104,18 +135,20 @@
     }
 
     // Comments come with release.comments from the API
-    $: comments = showAllComments ? allComments : (release?.comments || []).slice(0, 5);
+    $: comments = showAllComments ? allComments : allComments.slice(0, 5);
 
     // Rating state
     let userRating = 0;
-    $: userRating = release?.my_vote || 0;
+    let userRatingStars = 0;
+    $: userRating = release?.your_vote ?? release?.my_vote ?? 0;
+    $: userRatingStars = userRating > 5 ? Math.round(Number(userRating) / 2) : Number(userRating);
+    $: userRatingStars = Math.max(0, Math.min(5, userRatingStars || 0));
 
-    // Comment replies state
-    let expandedReplies = {};
-    let commentReplies = {};
+    let isRatingModalOpen = false;
+    let ratingSubmitting = false;
 
     function goToRelease(id) {
-        window.location.href = `/release/${id}`;
+        goto(`/release/${id}`);
     }
 
     async function toggleReplies(comment) {
@@ -153,7 +186,7 @@
 
         // Opening: make sure we have at least one extra page loaded when available
         // so that "Показать все" feels instant and not empty.
-        if (hasMoreComments && allComments.length < (release?.comment_count || 0)) {
+        if (hasMoreComments && allComments.length < ((release?.comments_count ?? release?.comment_count) || 0)) {
             await loadMoreComments();
         }
         showAllComments = true;
@@ -170,7 +203,7 @@
             const newComments = data.content || [];
             allComments = [...allComments, ...newComments];
             commentsPage = nextPage;
-            hasMoreComments = (release?.comment_count || 0) > allComments.length && newComments.length > 0;
+            hasMoreComments = ((release?.comments_count ?? release?.comment_count) || 0) > allComments.length && newComments.length > 0;
         } catch (e) {
             console.error('Error loading more comments:', e);
             hasMoreComments = false;
@@ -197,40 +230,106 @@
         comment.vote = comment.vote == vote ? 0 : vote;
         
         // Force reactivity
-        comments = [...comments];
+        allComments = [...allComments];
         
         try {
             const result = await api.release.voteComment(comment.id, vote);
             if (result.code !== 0) {
                 comment.vote = prevVote;
                 comment.likes_count = prevLikes;
-                comments = [...comments];
+                allComments = [...allComments];
             }
         } catch (e) {
             console.error('Error voting comment:', e);
             comment.vote = prevVote;
             comment.likes_count = prevLikes;
-            comments = [...comments];
+            allComments = [...allComments];
         }
     }
 
-    async function setRating(rating) {
+    function openRatingModal() {
+        if (!utoken) {
+            goto('/login');
+            return;
+        }
+
+        isRatingModalOpen = true;
+    }
+
+    async function refreshReleaseRatingFields() {
+        if (!api) return;
+
+        try {
+            const data = await api.release.info(releaseId, true);
+            const next = data?.release;
+            if (!next || !release) return;
+
+            release.grade = next.grade;
+            release.vote_count = next.vote_count;
+
+            for (const star of [1, 2, 3, 4, 5]) {
+                const key = `vote_${star}_count`;
+                if (next[key] !== undefined) {
+                    release[key] = next[key];
+                }
+            }
+
+            if (next.your_vote !== undefined) release.your_vote = next.your_vote;
+            if (next.my_vote !== undefined) release.my_vote = next.my_vote;
+
+            release = { ...release };
+        } catch (e) {
+            console.error('Error refreshing rating fields:', e);
+        }
+    }
+
+    async function setRatingStars(stars) {
         if (!api) return;
         if (!utoken) {
             goto('/login');
             return;
         }
-        
+
+        const id = Number(releaseId);
+        if (!Number.isFinite(id)) return;
+
+        const nextStars = Math.max(0, Math.min(5, Math.trunc(Number(stars) || 0)));
+
+        const prev = release?.your_vote ?? release?.my_vote ?? 0;
+        ratingSubmitting = true;
+
         try {
-            await api.release.vote(releaseId, rating);
-            userRating = rating;
-            // Update release grade display
-            if (release) {
-                release.my_vote = rating;
+            if (nextStars === 0) {
+                await api.release.removeVote(id);
+                if (release) {
+                    release.your_vote = 0;
+                    release.my_vote = 0;
+                    release = { ...release };
+                }
+                userRating = 0;
+            } else {
+                await api.release.addVote(id, nextStars);
+                if (release) {
+                    release.your_vote = nextStars;
+                    release.my_vote = nextStars;
+                    release = { ...release };
+                }
+                userRating = nextStars;
             }
+
+            await refreshReleaseRatingFields();
+            isRatingModalOpen = false;
         } catch (e) {
             console.error('Error setting rating:', e);
+            if (release) {
+                release.your_vote = prev;
+                release.my_vote = prev;
+                release = { ...release };
+            }
+            userRating = prev;
         }
+
+        ratingSubmitting = false;
     }
 
     async function toggleFavorite() {
@@ -399,89 +498,6 @@
                 </button>
 
                 <!-- Rating with graph -->
-                {#if release.grade && release.status?.id !== 3}
-                    <div class="rating-card">
-                        <div class="rating-left">
-                            <div class="rating-header">Рейтинг</div>
-                            <div class="rating-value">{release.grade.toFixed(2)}</div>
-                            <div class="rating-votes">{release.vote_count} голосов</div>
-                        </div>
-                        <div class="rating-graph">
-                            {#each [5, 4, 3, 2, 1] as star}
-                                {@const voteKey = `vote_${star}_count`}
-                                {@const voteCount = release[voteKey] || release[`vote${star}Count`] || 0}
-                                {@const maxVotes = Math.max(release.vote_1_count || 0, release.vote_2_count || 0, release.vote_3_count || 0, release.vote_4_count || 0, release.vote_5_count || 0, 1)}
-                                {@const percent = (voteCount / maxVotes) * 100}
-                                <div class="rating-bar-row">
-                                    <span class="rating-bar-label">{star}</span>
-                                    <div class="rating-bar-track">
-                                        <div class="rating-bar-fill" style="width: {percent}%"></div>
-                                    </div>
-                                </div>
-                            {/each}
-                        </div>
-                    </div>
-                    <div class="rating-stars">
-                        {#each [1, 2, 3, 4, 5] as star}
-                            <button 
-                                class="star-btn" 
-                                class:active={userRating >= star * 2}
-                                on:click={() => setRating(star * 2)}
-                                title="{star * 2} из 10"
-                            >
-                                <svg viewBox="0 0 24 24" fill={userRating >= star * 2 ? 'currentColor' : 'none'} stroke="currentColor" width="24" height="24">
-                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                                </svg>
-                            </button>
-                        {/each}
-                        {#if userRating > 0}
-                            <span class="user-rating-inline">({userRating})</span>
-                        {/if}
-                    </div>
-                {/if}
-
-                <!-- Bookmark stats bar -->
-                {#if (release.watching_count || 0) + (release.plan_count || 0) + (release.completed_count || 0) + (release.hold_on_count || 0) + (release.dropped_count || 0) > 0}
-                    {@const total = (release.watching_count || 0) + (release.plan_count || 0) + (release.completed_count || 0) + (release.hold_on_count || 0) + (release.dropped_count || 0)}
-                    <div class="bookmark-bar">
-                        <div class="bookmark-bar-track">
-                            <div class="bookmark-segment watching" style="width: {((release.watching_count || 0) / total) * 100}%"></div>
-                            <div class="bookmark-segment plan" style="width: {((release.plan_count || 0) / total) * 100}%"></div>
-                            <div class="bookmark-segment completed" style="width: {((release.completed_count || 0) / total) * 100}%"></div>
-                            <div class="bookmark-segment hold-on" style="width: {((release.hold_on_count || 0) / total) * 100}%"></div>
-                            <div class="bookmark-segment dropped" style="width: {((release.dropped_count || 0) / total) * 100}%"></div>
-                        </div>
-                    </div>
-                {/if}
-
-                <!-- Bookmark stats legend -->
-                <div class="bookmark-stats">
-                    <div class="stat watching">
-                        <span class="dot"></span>
-                        <span class="label">Смотрю</span>
-                        <span class="count">{release.watching_count || 0}</span>
-                    </div>
-                    <div class="stat plan">
-                        <span class="dot"></span>
-                        <span class="label">В планах</span>
-                        <span class="count">{release.plan_count || 0}</span>
-                    </div>
-                    <div class="stat completed">
-                        <span class="dot"></span>
-                        <span class="label">Просмотрено</span>
-                        <span class="count">{release.completed_count || 0}</span>
-                    </div>
-                    <div class="stat hold-on">
-                        <span class="dot"></span>
-                        <span class="label">Отложено</span>
-                        <span class="count">{release.hold_on_count || 0}</span>
-                    </div>
-                    <div class="stat dropped">
-                        <span class="dot"></span>
-                        <span class="label">Брошено</span>
-                        <span class="count">{release.dropped_count || 0}</span>
-                    </div>
-                </div>
             </div>
 
             <!-- Right side - Info -->
@@ -494,8 +510,6 @@
                         {@html release.note}
                     </div>
                 {/if}
-
-                <p class="description">{release.description}</p>
 
                 <!-- Info list with icons -->
                 <div class="info-list">
@@ -595,12 +609,132 @@
                     </div>
                 {/if}
 
+
+                <p class="description">{release.description}</p>
+
+                {#if release.status?.id !== 3}
+                    {@const totalVotes = release.vote_count || 0}
+                    <div class="rating-card">
+                        <div class="rating-top">
+                            <div class="rating-score">
+                                <svg class="rating-star-icon" viewBox="0 0 24 24" fill="currentColor" width="38" height="38">
+                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                                </svg>
+                                <p class="rating-score-text">{(release.grade ?? 0).toFixed(2)}</p>
+                            </div>
+                            {#if utoken}
+                                <div class="rating-actions">
+                                    {#if userRatingStars > 0}
+                                        <p class="rating-user-text">ваша оценка: {userRatingStars}</p>
+                                        <button type="button" class="rating-action-btn" disabled={ratingSubmitting} on:click={openRatingModal}>изменить</button>
+                                    {:else}
+                                        <button type="button" class="rating-action-btn" disabled={ratingSubmitting} on:click={openRatingModal}>оценить</button>
+                                    {/if}
+                                </div>
+                            {/if}
+                        </div>
+                        <p class="rating-votes">{totalVotes} голосов</p>
+                        <div class="rating-graph">
+                            {#each [5, 4, 3, 2, 1] as star}
+                                {@const voteKey = `vote_${star}_count`}
+                                {@const voteCount = release[voteKey] || release[`vote${star}Count`] || 0}
+                                {@const percent = totalVotes > 0 ? Math.floor((voteCount / totalVotes) * 100) : 0}
+                                <div class="rating-bar-row">
+                                    <span class="rating-bar-label">{star}</span>
+                                    <div class="rating-bar-track">
+                                        <div class="rating-bar-fill" style="width: {percent}%"></div>
+                                    </div>
+                                </div>
+                            {/each}
+                        </div>
+                    </div>
+                {/if}
+
+                {#if isRatingModalOpen}
+                    <div class="rating-modal" role="dialog" aria-modal="true">
+                        <div class="rating-modal__backdrop" role="button" tabindex="0" on:click={() => (isRatingModalOpen = false)} on:keydown={(e) => e.key === 'Enter' && (isRatingModalOpen = false)}></div>
+                        <div class="rating-modal__panel">
+                            <div class="rating-modal__header">
+                                <div class="rating-modal__title">Оценка</div>
+                                <button type="button" class="rating-modal__close" on:click={() => (isRatingModalOpen = false)} aria-label="Закрыть">
+                                    <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+                                        <path d="M18.3 5.71 12 12l6.3 6.29-1.41 1.42L12 13.41l-6.89 6.3-1.42-1.41L10.59 12 3.69 5.11l1.42-1.42L12 10.59l6.89-6.9z"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="rating-modal__stars">
+                                {#each [1, 2, 3, 4, 5] as star}
+                                    <button
+                                        type="button"
+                                        class="rating-modal__star"
+                                        class:active={userRatingStars >= star}
+                                        disabled={ratingSubmitting}
+                                        on:click={() => setRatingStars(star)}
+                                        title="{star} из 5"
+                                    >
+                                        <svg viewBox="0 0 24 24" fill={userRatingStars >= star ? 'currentColor' : 'none'} stroke="currentColor" width="28" height="28">
+                                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                                        </svg>
+                                    </button>
+                                {/each}
+                            </div>
+                            <div class="rating-modal__footer">
+                                <button type="button" class="rating-modal__btn" disabled={ratingSubmitting} on:click={() => (isRatingModalOpen = false)}>Закрыть</button>
+                                <button type="button" class="rating-modal__btn danger" disabled={ratingSubmitting} on:click={() => setRatingStars(0)}>Убрать оценку</button>
+                            </div>
+                        </div>
+                    </div>
+                {/if}
+
+                <!-- Bookmark stats bar -->
+                {#if (release.watching_count || 0) + (release.plan_count || 0) + (release.completed_count || 0) + (release.hold_on_count || 0) + (release.dropped_count || 0) > 0}
+                    {@const total = (release.watching_count || 0) + (release.plan_count || 0) + (release.completed_count || 0) + (release.hold_on_count || 0) + (release.dropped_count || 0)}
+                    <div class="bookmark-bar">
+                        <div class="bookmark-bar-track">
+                            <div class="bookmark-segment watching" style="width: {((release.watching_count || 0) / total) * 100}%"></div>
+                            <div class="bookmark-segment plan" style="width: {((release.plan_count || 0) / total) * 100}%"></div>
+                            <div class="bookmark-segment completed" style="width: {((release.completed_count || 0) / total) * 100}%"></div>
+                            <div class="bookmark-segment hold-on" style="width: {((release.hold_on_count || 0) / total) * 100}%"></div>
+                            <div class="bookmark-segment dropped" style="width: {((release.dropped_count || 0) / total) * 100}%"></div>
+                        </div>
+                    </div>
+                {/if}
+
+                <!-- Bookmark stats legend -->
+                <div class="bookmark-stats">
+                    <div class="stat watching">
+                        <span class="dot"></span>
+                        <span class="label">Смотрю</span>
+                        <span class="count">{release.watching_count || 0}</span>
+                    </div>
+                    <div class="stat plan">
+                        <span class="dot"></span>
+                        <span class="label">В планах</span>
+                        <span class="count">{release.plan_count || 0}</span>
+                    </div>
+                    <div class="stat completed">
+                        <span class="dot"></span>
+                        <span class="label">Просмотрено</span>
+                        <span class="count">{release.completed_count || 0}</span>
+                    </div>
+                    <div class="stat hold-on">
+                        <span class="dot"></span>
+                        <span class="label">Отложено</span>
+                        <span class="count">{release.hold_on_count || 0}</span>
+                    </div>
+                    <div class="stat dropped">
+                        <span class="dot"></span>
+                        <span class="label">Брошено</span>
+                        <span class="count">{release.dropped_count || 0}</span>
+                    </div>
+                </div>
+
                 <!-- Related releases -->
                 {#if release.related_releases?.length}
                     <div class="related-section">
                         <div class="section-header">
                             <h3>Связанные релизы ({release.related_releases.length})</h3>
-                            <a class="franchise-link" href="/franchise/{release.id}">Франшиза</a>
+                            <a class="franchise-link" href="/franchise/{release.related?.id || release.id}">Франшиза</a>
                         </div>
                         <div class="related-list">
                             {#each (showAllRelated ? release.related_releases : release.related_releases.slice(0, 3)) as related}
@@ -900,27 +1034,75 @@
         padding: 16px;
         border-radius: 12px;
         display: flex;
-        gap: 16px;
+        flex-direction: column;
+        gap: 12px;
     }
 
-    .rating-left {
-        text-align: left;
-        min-width: 80px;
+    .rating-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
     }
 
-    .rating-header {
+    .rating-score {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .rating-star-icon {
+        flex-shrink: 0;
+        color: var(--hold-on-color);
+    }
+
+    .rating-score-text {
+        margin: 0;
+        font-size: 32px;
+        font-weight: 700;
+        color: var(--text-color);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .rating-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        flex-shrink: 0;
+    }
+
+    .rating-user-text {
+        margin: 0;
         font-size: 13px;
         color: var(--secondary-text-color);
+        white-space: nowrap;
     }
 
-    .rating-value {
-        font-size: 32px;
-        font-weight: bold;
-        color: var(--text-color);
-        margin: 4px 0;
+    .rating-action-btn {
+        border: 1px solid var(--secondary-text-color);
+        background: transparent;
+        color: var(--secondary-text-color);
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .rating-action-btn:hover {
+        filter: brightness(1.1);
+    }
+
+    .rating-action-btn:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
     }
 
     .rating-votes {
+        margin: 0;
         font-size: 12px;
         color: var(--secondary-text-color);
     }
@@ -961,18 +1143,105 @@
         transition: width 0.3s;
     }
 
-    .rating-stars {
-        display: flex;
-        gap: 4px;
-        align-items: center;
-        justify-content: center;
-        margin-top: 8px;
+    .rating-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: grid;
+        place-items: center;
+        padding: 16px;
     }
 
-    .user-rating-inline {
-        font-size: 14px;
+    .rating-modal__backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+    }
+
+    .rating-modal__panel {
+        position: relative;
+        width: 100%;
+        max-width: 420px;
+        background: var(--alt-background-color);
+        border-radius: 14px;
+        padding: 14px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    }
+
+    .rating-modal__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 6px 6px 10px;
+    }
+
+    .rating-modal__title {
+        font-size: 16px;
+        font-weight: 800;
+        color: var(--text-color);
+    }
+
+    .rating-modal__close {
+        border: none;
+        background: transparent;
+        color: var(--secondary-text-color);
+        cursor: pointer;
+        padding: 6px;
+        border-radius: 10px;
+    }
+
+    .rating-modal__close:hover {
+        filter: brightness(1.1);
+    }
+
+    .rating-modal__stars {
+        display: flex;
+        justify-content: center;
+        gap: 6px;
+        padding: 10px 4px 14px;
+    }
+
+    .rating-modal__star {
+        border: none;
+        background: transparent;
         color: var(--hold-on-color);
-        margin-left: 8px;
+        cursor: pointer;
+        padding: 6px;
+        border-radius: 10px;
+    }
+
+    .rating-modal__star:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+
+    .rating-modal__footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 6px;
+    }
+
+    .rating-modal__btn {
+        border: none;
+        background: var(--background-color);
+        color: var(--text-color);
+        padding: 10px 12px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .rating-modal__btn.danger {
+        background: var(--dropped-color);
+        color: white;
+    }
+
+    .rating-modal__btn:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
     }
 
     .bookmark-bar {
@@ -1039,7 +1308,6 @@
     .title {
         font-size: 28px;
         font-weight: bold;
-        margin: 0 0 8px 0;
         color: var(--text-color);
     }
 
@@ -1047,7 +1315,6 @@
         font-size: 16px;
         font-weight: 500;
         color: var(--secondary-text-color);
-        margin: 0 0 16px 0;
     }
 
     .note {
@@ -1683,6 +1950,15 @@
         .action-btn {
             padding: 12px 16px;
             font-size: 14px;
+        }
+
+        .right-panel {
+            display: contents;
+        }
+
+        .title,
+        .alt-title {
+            order: -1;
         }
     }
 </style>

@@ -13,7 +13,6 @@
         { path: '/discover', icon: 'discover', label: 'Открыть' },
         { path: '/search', icon: 'search', label: 'Поиск' },
         { path: '/random', icon: 'random', label: 'Случайное' },
-        { path: '/feed', icon: 'feed', label: 'Лента' },
         { path: '/collections', icon: 'collection', label: 'Коллекции' },
         { path: '/bookmarks', icon: 'bookmark', label: 'Закладки', requireAuth: true },
         { path: '/history', icon: 'history', label: 'История', requireAuth: true },

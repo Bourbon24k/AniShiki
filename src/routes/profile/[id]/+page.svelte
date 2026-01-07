@@ -22,6 +22,8 @@
     let friendStatus = null;
     let bookmarkStats = { watching: 0, planned: 0, watched: 0, hold: 0, dropped: 0 };
 
+    let loadedProfileId = null;
+
     onMount(async () => {
         if (browser) {
             api = getApi();
@@ -29,12 +31,36 @@
         }
     });
 
+    $: if (browser && api && profileId && loadedProfileId !== profileId) {
+        loadProfile();
+    }
+
     async function loadProfile() {
         if (!api) return;
+        if (!profileId) return;
+
+        if (loadedProfileId !== profileId) {
+            loadedProfileId = profileId;
+            profile = null;
+            error = null;
+            recentAnime = [];
+            ratedAnime = [];
+            friends = [];
+            friendStatus = null;
+            bookmarkStats = { watching: 0, planned: 0, watched: 0, hold: 0, dropped: 0 };
+        }
+
+        const id = Number(profileId);
+        if (!Number.isFinite(id)) {
+            error = 'Профиль не найден';
+            isLoading = false;
+            return;
+        }
+
         isLoading = true;
         error = null;
         try {
-            const data = await api.profile.info(profileId);
+            const data = await api.profile.info(id);
             if (data.profile) {
                 profile = data.profile;
                 friendStatus = data.profile.friend_status;
@@ -53,7 +79,7 @@
                 // Load recent watched anime (status 1 = watching)
                 try {
                     const recent = await api.profile.getBookmarks({
-                        id: profileId,
+                        id,
                         type: 1,
                         page: 0,
                         sort: 1
@@ -66,7 +92,7 @@
                 // Load rated anime (releases user has rated)
                 try {
                     const rated = await api.profile.getVotedReleases ? 
-                        await api.profile.getVotedReleases(profileId, 0) : 
+                        await api.profile.getVotedReleases(id, 0) : 
                         { content: [] };
                     ratedAnime = (rated.content || []).slice(0, 5);
                 } catch (e) {
@@ -75,7 +101,7 @@
                 
                 // Load friends
                 try {
-                    const friendsData = await api.profile.getFriends({ id: profileId, page: 0 });
+                    const friendsData = await api.profile.getFriends({ id, page: 0 });
                     friends = (friendsData.content || []).slice(0, 6);
                 } catch (e) {
                     console.error('Error loading friends:', e);
@@ -84,7 +110,7 @@
                 // Load social links
                 try {
                     const socials = await api.profile.getSocials ? 
-                        await api.profile.getSocials(profileId) : null;
+                        await api.profile.getSocials(id) : null;
                     if (socials) {
                         profile.vk = socials.vk;
                         profile.telegram = socials.telegram;
@@ -108,23 +134,42 @@
 
     async function toggleFriend() {
         if (!api || !utoken) return;
+
+        const id = Number(profileId);
+        if (!Number.isFinite(id)) return;
         
         try {
             if (friendStatus === 2) {
                 // Already friends, remove
-                await api.profile.removeFriendRequest(profileId);
+                await api.profile.removeFriendRequest(id);
                 friendStatus = 0;
             } else if (friendStatus === 1) {
                 // Request sent, cancel
-                await api.profile.removeFriendRequest(profileId);
+                await api.profile.removeFriendRequest(id);
                 friendStatus = 0;
+            } else if (friendStatus === 3) {
+                // Incoming request: accept
+                await api.profile.sendFriendRequest(id);
+                friendStatus = 2;
             } else {
                 // Send request
-                await api.profile.sendFriendRequest(profileId);
+                await api.profile.sendFriendRequest(id);
                 friendStatus = 1;
             }
         } catch (e) {
             console.error('Error toggling friend:', e);
+        }
+    }
+
+    async function hideIncomingFriendRequest() {
+        if (!api || !utoken) return;
+        const id = Number(profileId);
+        if (!Number.isFinite(id)) return;
+        try {
+            await api.profile.hideFriendRequest(id);
+            friendStatus = 0;
+        } catch (e) {
+            console.error('Error hiding friend request:', e);
         }
     }
 
@@ -394,24 +439,41 @@
             <!-- Friend action button -->
             {#if utoken && !isOwnProfile}
                 <div class="friend-action">
-                    <button class="friend-btn" class:active={friendStatus === 2} class:pending={friendStatus === 1} on:click={toggleFriend}>
-                        {#if friendStatus === 2}
-                            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-                                <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
-                            </svg>
-                            В друзьях
-                        {:else if friendStatus === 1}
-                            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                            </svg>
-                            Запрос отправлен
-                        {:else}
-                            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-                                <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-                            </svg>
-                            Добавить в друзья
-                        {/if}
-                    </button>
+                    {#if friendStatus === 3}
+                        <div class="friend-btn-row">
+                            <button class="friend-btn" on:click={toggleFriend}>
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                                    <path d="M9 16.2l-3.5-3.5L4 14.2 9 19l12-12-1.5-1.4z"/>
+                                </svg>
+                                Принять заявку
+                            </button>
+                            <button class="friend-btn friend-btn--danger" on:click={hideIncomingFriendRequest}>
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                                    <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                                </svg>
+                                Скрыть
+                            </button>
+                        </div>
+                    {:else}
+                        <button class="friend-btn" class:active={friendStatus === 2} class:pending={friendStatus === 1} on:click={toggleFriend}>
+                            {#if friendStatus === 2}
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                                    <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+                                </svg>
+                                В друзьях
+                            {:else if friendStatus === 1}
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                                </svg>
+                                Запрос отправлен
+                            {:else}
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                                    <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                                </svg>
+                                Добавить в друзья
+                            {/if}
+                        </button>
+                    {/if}
                 </div>
             {/if}
 
@@ -717,6 +779,12 @@
         margin-bottom: 20px;
     }
 
+    .friend-btn-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
     .friend-btn {
         display: flex;
         align-items: center;
@@ -742,6 +810,10 @@
 
     .friend-btn.pending {
         background: var(--hold-on-color);
+    }
+
+    .friend-btn.friend-btn--danger {
+        background: #c0392b;
     }
 
     /* Watch dynamics chart */

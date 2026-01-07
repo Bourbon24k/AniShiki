@@ -17,6 +17,8 @@
     let hasMore = true;
     let api = null;
 
+    let loadedProfileId = null;
+
     onMount(async () => {
         if (browser) {
             api = getApi();
@@ -24,16 +26,33 @@
         }
     });
 
+    $: if (browser && api && profileId && loadedProfileId !== profileId) {
+        loadData();
+    }
+
     async function loadData() {
         if (!api) return;
+
+        const id = Number(profileId);
+        if (!Number.isFinite(id)) return;
+
+        if (loadedProfileId !== profileId) {
+            loadedProfileId = profileId;
+            friends = [];
+            profile = null;
+            isLoadingMore = false;
+            hasMore = true;
+            currentPage = 0;
+        }
+
         isLoading = true;
         try {
             // Load profile info
-            const profileData = await api.profile.info(profileId);
+            const profileData = await api.profile.info(id);
             profile = profileData.profile;
             
             // Load friends
-            const friendsData = await api.profile.getFriends({ id: profileId, page: 0 });
+            const friendsData = await api.profile.getFriends({ id, page: 0 });
             friends = friendsData.content || [];
             hasMore = friends.length >= 20;
         } catch (e) {
@@ -44,10 +63,14 @@
 
     async function loadMore() {
         if (!api || isLoadingMore || !hasMore) return;
+
+        const id = Number(profileId);
+        if (!Number.isFinite(id)) return;
+
         isLoadingMore = true;
         currentPage++;
         try {
-            const data = await api.profile.getFriends({ id: profileId, page: currentPage });
+            const data = await api.profile.getFriends({ id, page: currentPage });
             const newFriends = data.content || [];
             friends = [...friends, ...newFriends];
             hasMore = newFriends.length >= 20;
@@ -71,7 +94,7 @@
 
 <div class="friends-page" on:scroll={handleScroll}>
     <div class="page-header">
-        <a href="/profile/{profileId}" class="back-link">
+        <a href="/profile/{profileId}" class="back-link" aria-label="Назад" title="Назад">
             <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
                 <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
             </svg>

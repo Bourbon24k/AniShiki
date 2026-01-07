@@ -4,6 +4,7 @@
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
     import { getApi } from '$lib/api';
+    import { userToken } from '$lib/stores';
     import Preloader from '$lib/components/Preloader.svelte';
     import AnimeCard from '$lib/components/AnimeCard.svelte';
 
@@ -24,13 +25,91 @@
     let expandedFranchises = {};
     let franchiseReleases = {};
 
+    $: utoken = $userToken;
+
+    let where = 'releases';
+    let searchBy = 0;
+    let availableWhereOptions = [];
+
+    const whereOptions = [
+        { id: 'releases', label: 'Релизах' },
+        { id: 'profiles', label: 'Профилях' },
+        { id: 'collections', label: 'Коллекциях' },
+        { id: 'favorites', label: 'Избранном', auth: true },
+        { id: 'history', label: 'Истории', auth: true },
+        { id: 'list', label: 'Списках', auth: true }
+    ];
+
+    const searchByOptions = {
+        releases: [
+            { id: 0, label: 'Названию' },
+            { id: 1, label: 'Студии' },
+            { id: 2, label: 'Режиссёру' },
+            { id: 3, label: 'Автору' },
+            { id: 4, label: 'Тегу' }
+        ],
+        list: [
+            { id: 1, label: 'Смотрю' },
+            { id: 2, label: 'В планах' },
+            { id: 3, label: 'Просмотрено' },
+            { id: 4, label: 'Отложено' },
+            { id: 5, label: 'Брошено' }
+        ]
+    };
+
+    let searchHistory = [];
+
+    function computeWhereOptions() {
+        if (!api) {
+            availableWhereOptions = [{ id: 'releases', label: 'Релизах' }];
+            return;
+        }
+
+        const supports = {
+            releases: !!api?.search?.releases,
+            profiles: !!api?.search?.profiles,
+            collections: !!api?.search?.collections,
+            favorites: !!api?.search?.profileFavorites,
+            history: !!api?.search?.profileHistory,
+            list: !!api?.search?.profileList
+        };
+
+        availableWhereOptions = whereOptions.filter(o => supports[o.id] && (!o.auth || !!utoken));
+        if (availableWhereOptions.length === 0) {
+            availableWhereOptions = [{ id: 'releases', label: 'Релизах' }];
+        }
+
+        if (!availableWhereOptions.some(o => o.id === where)) {
+            where = availableWhereOptions[0].id;
+        }
+    }
+
     $: queryParam = $page.url.searchParams.get('q') || '';
     $: genreParam = $page.url.searchParams.get('genre') || '';
     $: studioParam = $page.url.searchParams.get('studio') || '';
+    $: whereParam = $page.url.searchParams.get('where') || 'releases';
+    $: byParam = $page.url.searchParams.get('by');
 
     onMount(() => {
         if (browser) {
             api = getApi();
+            try {
+                const raw = localStorage.getItem('search_history');
+                searchHistory = raw ? JSON.parse(raw) : [];
+            } catch (_) {
+                searchHistory = [];
+            }
+
+            where = whereParam;
+            computeWhereOptions();
+
+            const parsedBy = byParam !== null ? Number(byParam) : null;
+            if (Number.isFinite(parsedBy)) {
+                searchBy = parsedBy;
+            } else {
+                searchBy = (searchByOptions[where]?.[0]?.id ?? 0);
+            }
+
             if (studioParam) {
                 studioQuery = studioParam;
                 filterType = 'studio';
@@ -46,6 +125,28 @@
             }
         }
     });
+
+    $: if (browser && api && utoken !== undefined) {
+        computeWhereOptions();
+    }
+
+    async function searchProfileList(page) {
+        const payload = { query: searchQuery, page };
+
+        try {
+            return await api.search.profileList({ ...payload, status: searchBy });
+        } catch (_) {
+        }
+        try {
+            return await api.search.profileList({ ...payload, listStatus: searchBy });
+        } catch (_) {
+        }
+        try {
+            return await api.search.profileList({ ...payload, searchBy });
+        } catch (_) {
+        }
+        return await api.search.profileList(searchBy, { query: searchQuery, page });
+    }
 
     async function searchByGenre() {
         if (!api || !genreQuery) return;
@@ -106,9 +207,52 @@
 
     function updateUrl() {
         if (searchQuery) {
-            goto(`/search?q=${encodeURIComponent(searchQuery)}`, { replaceState: true, noScroll: true });
+            const url = new URL('/search', window.location.origin);
+            url.searchParams.set('q', searchQuery);
+            if (where && where !== 'releases') url.searchParams.set('where', where);
+            if (searchByOptions[where]) url.searchParams.set('by', String(searchBy));
+            goto(url.pathname + url.search, { replaceState: true, noScroll: true });
         } else {
             goto('/search', { replaceState: true, noScroll: true });
+        }
+    }
+
+    function persistHistory(query) {
+        if (!browser) return;
+        const cleaned = (query || '').trim();
+        if (!cleaned) return;
+        const next = [cleaned, ...searchHistory.filter(x => x !== cleaned)].slice(0, 20);
+        searchHistory = next;
+        try {
+            localStorage.setItem('search_history', JSON.stringify(next));
+        } catch (_) {}
+    }
+
+    function pickFromHistory(q) {
+        searchQuery = q;
+        filterType = 'text';
+        updateUrl();
+        performSearch();
+    }
+
+    function onWhereChange(e) {
+        where = e.target.value;
+        searchBy = (searchByOptions[where]?.[0]?.id ?? 0);
+        if (searchQuery.length >= 2) {
+            updateUrl();
+            performSearch();
+        } else {
+            updateUrl();
+        }
+    }
+
+    function onSearchByChange(e) {
+        searchBy = Number(e.target.value);
+        if (searchQuery.length >= 2) {
+            updateUrl();
+            performSearch();
+        } else {
+            updateUrl();
         }
     }
 
@@ -158,7 +302,10 @@
         const relatedResults = await Promise.all(
             candidates.map(async (release) => {
                 try {
-                    const data = await api.release.getRelatedReleases(release.id, 0);
+                    const franchiseId = Number(release?.related?.id ?? release?.related?.['@id'] ?? release.id);
+                    if (!Number.isFinite(franchiseId)) return null;
+
+                    const data = await api.release.getRelatedReleases(franchiseId, 0);
                     return { base: release, franchise: data?.related || null, related: data?.content || [] };
                 } catch (e) {
                     return null;
@@ -181,10 +328,11 @@
             .slice(0, 3);
 
         const f = best.franchise || {};
+        const franchiseId = f.id ?? f['@id'] ?? best.base?.related?.id ?? best.base?.related?.['@id'] ?? best.base.id;
         franchises = [
             {
                 // NOTE: /franchise/[id] route expects a release id; it then loads franchise meta via getRelatedReleases(id)
-                id: best.base.id,
+                id: franchiseId,
                 name_ru: f.name_ru || f.title_ru || best.base.title_ru,
                 name: f.name || best.base.title_original,
                 description: f.description || best.base.description,
@@ -204,7 +352,10 @@
 
         if (!franchiseReleases[franchiseId]) {
             try {
-                const data = await api.release.getRelatedReleases(franchiseId, 0);
+                const id = Number(franchiseId);
+                if (!Number.isFinite(id)) return;
+
+                const data = await api.release.getRelatedReleases(id, 0);
                 franchiseReleases[franchiseId] = data.content || [];
                 franchiseReleases = {...franchiseReleases};
             } catch (e) {
@@ -229,15 +380,41 @@
         franchiseReleases = {};
         
         try {
-            const releasesData = await api.search.releases({
-                query: searchQuery,
-                searchBy: 0,
-                page: 0
-            });
-            results = releasesData.releases || releasesData.content || [];
+            persistHistory(searchQuery);
 
-            await searchFranchises(results);
-            hasMore = results.length >= 25;
+            let data;
+            if (where === 'releases' && api.search?.releases) {
+                data = await api.search.releases({ query: searchQuery, searchBy, page: 0 });
+                results = data.releases || data.content || [];
+                await searchFranchises(results);
+                hasMore = results.length >= 25;
+            } else if (where === 'profiles' && api.search?.profiles) {
+                data = await api.search.profiles({ query: searchQuery, page: 0 });
+                results = data.content || data.profiles || [];
+                hasMore = results.length >= 25;
+            } else if (where === 'collections' && api.search?.collections) {
+                data = await api.search.collections({ query: searchQuery, page: 0 });
+                results = data.content || data.collections || [];
+                hasMore = results.length >= 25;
+            } else if (where === 'favorites' && utoken && api.search?.profileFavorites) {
+                data = await api.search.profileFavorites({ query: searchQuery, page: 0 });
+                results = data.content || data.releases || [];
+                hasMore = results.length >= 25;
+            } else if (where === 'history' && utoken && api.search?.profileHistory) {
+                data = await api.search.profileHistory({ query: searchQuery, page: 0 });
+                results = data.content || data.releases || [];
+                hasMore = results.length >= 25;
+            } else if (where === 'list' && utoken && api.search?.profileList) {
+                data = await searchProfileList(0);
+                results = data.content || data.releases || [];
+                hasMore = results.length >= 25;
+            } else {
+                // Fallback to releases search
+                data = await api.search.releases({ query: searchQuery, searchBy: 0, page: 0 });
+                results = data.releases || data.content || [];
+                await searchFranchises(results);
+                hasMore = results.length >= 25;
+            }
         } catch (e) {
             console.error('Search error:', e);
             results = [];
@@ -262,7 +439,21 @@
                 const studioValue = isNaN(Number(studioQuery)) ? studioQuery : Number(studioQuery);
                 data = await api.release.filter(currentPage, { studios: [studioValue] }, true);
             } else {
-                data = await api.search.releases({ query: searchQuery, searchBy: 0, page: currentPage });
+                if (where === 'releases' && api.search?.releases) {
+                    data = await api.search.releases({ query: searchQuery, searchBy, page: currentPage });
+                } else if (where === 'profiles' && api.search?.profiles) {
+                    data = await api.search.profiles({ query: searchQuery, page: currentPage });
+                } else if (where === 'collections' && api.search?.collections) {
+                    data = await api.search.collections({ query: searchQuery, page: currentPage });
+                } else if (where === 'favorites' && utoken && api.search?.profileFavorites) {
+                    data = await api.search.profileFavorites({ query: searchQuery, page: currentPage });
+                } else if (where === 'history' && utoken && api.search?.profileHistory) {
+                    data = await api.search.profileHistory({ query: searchQuery, page: currentPage });
+                } else if (where === 'list' && utoken && api.search?.profileList) {
+                    data = await searchProfileList(currentPage);
+                } else {
+                    data = await api.search.releases({ query: searchQuery, searchBy: 0, page: currentPage });
+                }
             }
             
             const newResults = data.releases || data.content || [];
@@ -299,6 +490,26 @@
 
 <div class="search-page">
     <form class="search-form" on:submit={handleSubmit}>
+        <div class="filters-row">
+            <div class="filter-select">
+                <span class="filter-label">Искать в</span>
+                <select class="filter-control" bind:value={where} on:change={onWhereChange}>
+                    {#each availableWhereOptions as opt}
+                        <option value={opt.id}>{opt.label}</option>
+                    {/each}
+                </select>
+            </div>
+            {#if searchByOptions[where]}
+                <div class="filter-select">
+                    <span class="filter-label">Искать по</span>
+                    <select class="filter-control" bind:value={searchBy} on:change={onSearchByChange}>
+                        {#each searchByOptions[where] as opt}
+                            <option value={opt.id}>{opt.label}</option>
+                        {/each}
+                    </select>
+                </div>
+            {/if}
+        </div>
         <div class="search-input-wrapper">
             <svg class="search-icon" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
@@ -337,6 +548,16 @@
                 </svg>
                 <p>Введите название аниме для поиска</p>
             </div>
+            {#if searchHistory.length > 0}
+                <div class="history-block">
+                    <div class="history-title">Недавние запросы</div>
+                    <div class="history-list">
+                        {#each searchHistory.slice(0, 8) as item}
+                            <button class="history-item" type="button" on:click={() => pickFromHistory(item)}>{item}</button>
+                        {/each}
+                    </div>
+                </div>
+            {/if}
         {:else}
             <div class="results-header">
                 {#if studioQuery}
@@ -401,9 +622,31 @@
             {/if}
 
             <div class="results-list">
-                {#each results as anime (anime.id)}
-                    <AnimeCard {anime} type="full-row" />
-                {/each}
+                {#if where === 'profiles'}
+                    {#each results as profile (profile.id)}
+                        <a class="profile-result" href="/profile/{profile.id}">
+                            <img class="profile-avatar" src={profile.avatar} alt={profile.login} referrerpolicy="no-referrer" />
+                            <div class="profile-meta">
+                                <div class="profile-login">{profile.login}</div>
+                                <div class="profile-sub">ID: {profile.id}</div>
+                            </div>
+                        </a>
+                    {/each}
+                {:else if where === 'collections'}
+                    {#each results as c (c.id)}
+                        <a class="collection-result" href="/collection/{c.id}">
+                            <img class="collection-cover" src={c.image} alt={c.title} referrerpolicy="no-referrer" />
+                            <div class="collection-meta">
+                                <div class="collection-title">{c.title}</div>
+                                <div class="collection-sub">{c.favorites_count || 0} в избранном • {c.comment_count || 0} комментариев</div>
+                            </div>
+                        </a>
+                    {/each}
+                {:else}
+                    {#each results as anime (anime.id)}
+                        <AnimeCard {anime} type="full-row" />
+                    {/each}
+                {/if}
             </div>
             
             {#if hasMore}
@@ -426,6 +669,40 @@
         width: 100%;
         min-height: 100%;
         padding: 20px;
+    }
+
+    .filters-row {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+    }
+
+    .filter-select {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        background-color: var(--alt-background-color);
+        border-radius: 12px;
+        flex: 1;
+        min-width: 240px;
+    }
+
+    .filter-label {
+        color: var(--secondary-text-color);
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    .filter-control {
+        width: 100%;
+        border: none;
+        background: transparent;
+        color: var(--text-color);
+        font-size: 14px;
+        outline: none;
+        cursor: pointer;
     }
 
     .search-form {
@@ -529,6 +806,95 @@
 
     .empty-state p {
         font-size: 16px;
+    }
+
+    .history-block {
+        max-width: 700px;
+        margin: 0 auto;
+        margin-top: 20px;
+        padding: 16px;
+        background: var(--alt-background-color);
+        border-radius: 12px;
+    }
+
+    .history-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-color);
+        margin-bottom: 10px;
+    }
+
+    .history-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .history-item {
+        padding: 8px 12px;
+        border: none;
+        background: var(--background-color);
+        color: var(--text-color);
+        border-radius: 999px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: filter 0.2s;
+    }
+
+    .history-item:hover {
+        filter: brightness(1.1);
+    }
+
+    .profile-result,
+    .collection-result {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px;
+        border-radius: 12px;
+        background: var(--alt-background-color);
+        text-decoration: none;
+        color: inherit;
+        margin-bottom: 10px;
+    }
+
+    .profile-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        object-fit: cover;
+        background: var(--background-color);
+        flex-shrink: 0;
+    }
+
+    .profile-login {
+        font-weight: 600;
+        color: var(--text-color);
+    }
+
+    .profile-sub {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+    }
+
+    .collection-cover {
+        width: 80px;
+        height: 45px;
+        border-radius: 10px;
+        object-fit: cover;
+        flex-shrink: 0;
+        background: var(--background-color);
+    }
+
+    .collection-title {
+        font-weight: 600;
+        color: var(--text-color);
+        margin-bottom: 2px;
+    }
+
+    .collection-sub {
+        font-size: 12px;
+        color: var(--secondary-text-color);
     }
 
     .load-more-wrapper {

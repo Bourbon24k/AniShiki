@@ -16,18 +16,32 @@
     let hasMore = true;
     let api = null;
 
-    onMount(async () => {
+    let loadedFranchiseId = null;
+
+    onMount(() => {
         if (browser) {
             api = getApi();
-            await loadFranchise();
         }
     });
 
     async function loadFranchise() {
         if (!api) return;
+
+        const id = Number(franchiseId);
+        if (!Number.isFinite(id)) return;
+
+        if (loadedFranchiseId !== franchiseId) {
+            loadedFranchiseId = franchiseId;
+            franchise = null;
+            releases = [];
+            currentPage = 0;
+            isLoadingMore = false;
+            hasMore = true;
+        }
+
         isLoading = true;
         try {
-            const data = await api.release.getRelatedReleases(franchiseId, 0);
+            const data = await api.release.getRelatedReleases(id, 0);
             releases = data.content || [];
             
             if (data.related && (data.related.name_ru || data.related.title_ru)) {
@@ -51,12 +65,20 @@
         isLoading = false;
     }
 
+    $: if (browser && api && franchiseId && loadedFranchiseId !== franchiseId) {
+        loadFranchise();
+    }
+
     async function loadMore() {
         if (!api || isLoadingMore || !hasMore) return;
+
+        const id = Number(franchiseId);
+        if (!Number.isFinite(id)) return;
+
         isLoadingMore = true;
         currentPage++;
         try {
-            const data = await api.release.getRelatedReleases(franchiseId, currentPage);
+            const data = await api.release.getRelatedReleases(id, currentPage);
             const newReleases = data.content || [];
             releases = [...releases, ...newReleases];
             hasMore = newReleases.length >= 25;

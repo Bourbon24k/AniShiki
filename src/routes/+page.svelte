@@ -1,6 +1,7 @@
 <script>
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
+	import { page as pageStore } from '$app/stores';
 	import { getApi } from '$lib/api';
 	import Preloader from '$lib/components/Preloader.svelte';
 	import AnimeCard from '$lib/components/AnimeCard.svelte';
@@ -25,9 +26,23 @@
 	onMount(async () => {
 		if (browser) {
 			api = getApi();
-			await loadReleases();
+			const t = $pageStore?.url?.searchParams?.get('type');
+			const parsed = t !== null ? Number(t) : null;
+			if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 5) {
+				setReleasesType(parsed);
+			} else {
+				await loadReleases();
+			}
 		}
 	});
+
+	$: if (browser && api) {
+		const t = $pageStore?.url?.searchParams?.get('type');
+		const parsed = t !== null ? Number(t) : null;
+		if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 5 && parsed !== typeReleases) {
+			setReleasesType(parsed);
+		}
+	}
 
 	async function loadReleases() {
 		if (!api) return;

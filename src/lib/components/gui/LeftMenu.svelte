@@ -17,6 +17,7 @@
 		const token = localStorage.getItem('user_token');
 		if (token) {
 			userToken = JSON.parse(token);
+			profileInfo = userToken;
 		}
 	}
 

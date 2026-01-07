@@ -555,18 +555,16 @@
     }
 
     .back-btn {
-        display: flex;
+        display: inline-flex;
         align-items: center;
-        justify-content: center;
-        width: 40px;
-        height: 40px;
+        gap: 10px;
+        padding: 10px 14px;
         border: none;
-        border-radius: 50%;
-        background: rgba(0,0,0,0.6);
-        color: white;
+        border-radius: 10px;
+        background: var(--alt-background-color);
+        color: var(--text-color);
+        font-weight: 600;
         cursor: pointer;
-        transition: all 0.2s;
-        text-decoration: none;
     }
 
     .back-btn:hover {

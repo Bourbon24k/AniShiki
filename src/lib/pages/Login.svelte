@@ -28,10 +28,15 @@
 				baseUrl: `https://${endpointUrl}`
 			}).endpoints;
 
-			const result = await anixApi.auth.login(email, password);
+			const result = await anixApi.auth.signIn({ login: email, password });
 			
-			if (result && result.token) {
-				localStorage.setItem('user_token', JSON.stringify(result));
+			if (result && result.code === 0 && result.profileToken?.token) {
+				localStorage.setItem('user_token', JSON.stringify({
+					token: result.profileToken.token,
+					id: result.profile?.id,
+					login: result.profile?.login,
+					avatar: result.profile?.avatar
+				}));
 				window.location.reload();
 			} else {
 				error = 'Ошибка авторизации';

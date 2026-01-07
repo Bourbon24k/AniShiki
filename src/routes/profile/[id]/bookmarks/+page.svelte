@@ -19,6 +19,8 @@
     let api = null;
     let activeStatus = 1; // 1=watching, 2=planned, 3=watched, 4=hold, 5=dropped
 
+    let loadedProfileId = null;
+
     const statuses = [
         { id: 1, name: 'Смотрю', color: 'var(--watching-color)' },
         { id: 2, name: 'В планах', color: 'var(--planned-color)' },
@@ -35,10 +37,28 @@
         }
     });
 
+    $: if (browser && api && profileId && loadedProfileId !== profileId) {
+        loadProfile();
+        loadBookmarks();
+    }
+
     async function loadProfile() {
         if (!api) return;
+
+        const id = Number(profileId);
+        if (!Number.isFinite(id)) return;
+
+        if (loadedProfileId !== profileId) {
+            loadedProfileId = profileId;
+            profile = null;
+            bookmarks = [];
+            isLoadingMore = false;
+            hasMore = true;
+            currentPage = 0;
+        }
+
         try {
-            const data = await api.profile.info(profileId);
+            const data = await api.profile.info(id);
             profile = data.profile;
         } catch (e) {
             console.error('Error loading profile:', e);
@@ -47,13 +67,17 @@
 
     async function loadBookmarks() {
         if (!api) return;
+
+        const id = Number(profileId);
+        if (!Number.isFinite(id)) return;
+
         isLoading = true;
         currentPage = 0;
         hasMore = true;
         
         try {
             const data = await api.profile.getBookmarks({
-                id: profileId,
+                id,
                 type: activeStatus,
                 page: 0,
                 sort: 1
@@ -69,12 +93,16 @@
 
     async function loadMore() {
         if (!api || isLoadingMore || !hasMore) return;
+
+        const id = Number(profileId);
+        if (!Number.isFinite(id)) return;
+
         isLoadingMore = true;
         currentPage++;
         
         try {
             const data = await api.profile.getBookmarks({
-                id: profileId,
+                id,
                 type: activeStatus,
                 page: currentPage,
                 sort: 1
