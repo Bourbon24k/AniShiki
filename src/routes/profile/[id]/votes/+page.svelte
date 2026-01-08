@@ -17,19 +17,81 @@
     let loadedProfileId = null;
 
     function toDate(ts) {
+        if (ts === null || ts === undefined) return null;
+        if (ts instanceof Date) return Number.isNaN(ts.getTime()) ? null : ts;
+
+        // Accept numeric strings, seconds/ms, and ISO date strings.
+        if (typeof ts === 'string') {
+            const s = ts.trim();
+            if (!s) return null;
+
+            // Numeric string
+            if (/^\d+$/.test(s)) {
+                const n = Number(s);
+                if (!Number.isFinite(n) || n <= 0) return null;
+                return new Date(n > 10_000_000_000 ? n : n * 1000);
+            }
+
+            const d = new Date(s);
+            return Number.isNaN(d.getTime()) ? null : d;
+        }
+
         const n = Number(ts);
         if (!Number.isFinite(n) || n <= 0) return null;
-        return new Date(n > 10_000_000_000 ? n : n * 1000);
+        const d = new Date(n > 10_000_000_000 ? n : n * 1000);
+        return Number.isNaN(d.getTime()) ? null : d;
     }
 
     function getVoteDate(item) {
-        return (
-            toDate(item?.timestamp) ||
-            toDate(item?.creation_date) ||
-            toDate(item?.created_at) ||
-            toDate(item?.last_update_date) ||
-            null
-        );
+        const releaseTs =
+            item?.release?.timestamp ??
+            item?.release?.creation_date ??
+            item?.release?.created_at ??
+            null;
+
+        const releaseLastUpdateTs = item?.release?.last_update_date ?? null;
+
+        const releaseMs = releaseTs != null ? toDate(releaseTs)?.getTime() ?? null : null;
+        const releaseLastUpdateMs =
+            releaseLastUpdateTs != null ? toDate(releaseLastUpdateTs)?.getTime() ?? null : null;
+
+        const voteCandidates = [
+            item?.vote_timestamp,
+            item?.vote_date,
+            item?.my_vote_timestamp,
+            item?.my_vote_date,
+            item?.user_vote_timestamp,
+            item?.user_vote_date,
+            item?.vote?.timestamp,
+            item?.vote?.created_at
+        ];
+
+        for (const ts of voteCandidates) {
+            if (ts == null) continue;
+            const d = toDate(ts);
+            if (!d) continue;
+            return d;
+        }
+
+        const fallbackCandidates = [item?.timestamp, item?.creation_date, item?.created_at, item?.last_update_date];
+
+        for (const ts of fallbackCandidates) {
+            if (ts == null) continue;
+
+            const d = toDate(ts);
+            if (!d) continue;
+
+            // If backend returns release timestamp on the vote item, avoid showing it as vote date.
+            if (releaseMs != null && d.getTime() === releaseMs) continue;
+            if (releaseLastUpdateMs != null && d.getTime() === releaseLastUpdateMs) continue;
+
+            // Vote date should not be before release creation (if we know it)
+            if (releaseMs != null && d.getTime() <= releaseMs) continue;
+
+            return d;
+        }
+
+        return null;
     }
 
     onMount(async () => {
@@ -205,6 +267,14 @@
         text-decoration: none;
         color: inherit;
         position: relative;
+        display: block;
+        border-radius: 14px;
+        transition: transform 0.18s ease, filter 0.18s ease;
+    }
+
+    .vote-card:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.03);
     }
 
     .vote-poster {
@@ -213,6 +283,7 @@
         object-fit: cover;
         border-radius: 12px;
         margin-bottom: 8px;
+        background: var(--alt-background-color);
     }
 
     .vote-badge {
@@ -228,12 +299,14 @@
         border-radius: 6px;
         font-size: 14px;
         font-weight: 600;
+        backdrop-filter: blur(6px);
     }
 
     .vote-info {
         display: flex;
         flex-direction: column;
         gap: 4px;
+        padding: 0 2px;
     }
 
     .vote-title {
@@ -287,14 +360,23 @@
         cursor: pointer;
     }
 
+    .load-more-btn:hover {
+        filter: brightness(1.05);
+    }
+
     @media (max-width: 768px) {
         .votes-page {
             padding: 16px;
         }
 
         .votes-grid {
-            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 12px;
+        }
+
+        .vote-score {
+            font-size: 13px;
+            padding: 6px 9px;
         }
     }
 </style>

@@ -62,6 +62,14 @@
     let expandedReplies = {};
     let commentReplies = {};
 
+    let commentMessage = '';
+    let commentIsSpoiler = false;
+    let commentSubmitting = false;
+    let commentError = '';
+    let replyParentCommentId = null;
+    let replyToProfileId = null;
+    let replyToLogin = '';
+
     let loadedReleaseId = null;
 
     function getCommentDate(c) {
@@ -218,6 +226,88 @@
         }
         
         isLoadingComments = false;
+    }
+
+    function startReplyTo(comment) {
+        if (!comment) return;
+        if (!utoken) {
+            goto('/login');
+            return;
+        }
+
+        replyParentCommentId = comment.id;
+        replyToProfileId = comment.profile?.id ?? null;
+        replyToLogin = comment.profile?.login ?? '';
+
+        if (replyToLogin) {
+            commentMessage = `@${replyToLogin}, `;
+        }
+    }
+
+    function cancelReply() {
+        replyParentCommentId = null;
+        replyToProfileId = null;
+        replyToLogin = '';
+    }
+
+    async function submitComment() {
+        if (!api) return;
+        if (!utoken) {
+            goto('/login');
+            return;
+        }
+
+        const message = String(commentMessage || '').trim();
+        if (!message) return;
+
+        commentError = '';
+        commentSubmitting = true;
+
+        try {
+            const id = Number(releaseId);
+            if (!Number.isFinite(id)) return;
+
+            const data = await api.release.addComment(id, {
+                parentCommentId: replyParentCommentId,
+                replyToProfileId,
+                message,
+                isSpoiler: !!commentIsSpoiler
+            });
+
+            const newComment = data?.comment;
+            if (newComment) {
+                if (replyParentCommentId) {
+                    // Update replies list if opened.
+                    if (commentReplies[replyParentCommentId]) {
+                        commentReplies[replyParentCommentId] = [...commentReplies[replyParentCommentId], newComment];
+                        commentReplies = { ...commentReplies };
+                    }
+
+                    const parent = allComments.find(c => c?.id === replyParentCommentId);
+                    if (parent) {
+                        parent.reply_count = (parent.reply_count || 0) + 1;
+                        allComments = [...allComments];
+                    }
+                } else {
+                    allComments = [newComment, ...allComments];
+                }
+
+                if (release) {
+                    if (release.comments_count != null) release.comments_count = Number(release.comments_count || 0) + 1;
+                    if (release.comment_count != null) release.comment_count = Number(release.comment_count || 0) + 1;
+                    release = { ...release };
+                }
+            }
+
+            commentMessage = '';
+            commentIsSpoiler = false;
+            cancelReply();
+        } catch (e) {
+            console.error('Error adding comment:', e);
+            commentError = 'Не удалось отправить комментарий';
+        }
+
+        commentSubmitting = false;
     }
 
     async function voteComment(comment, vote) {
@@ -774,6 +864,44 @@
                     <div class="section-header">
                         <h3>Комментарии ({release.comments_count ?? release.comment_count ?? 0})</h3>
                     </div>
+
+                    <div class="comment-composer">
+                        {#if utoken}
+                            {#if replyParentCommentId}
+                                <div class="composer-reply">
+                                    <span class="composer-reply-text">Ответ пользователю {replyToLogin || ''}</span>
+                                    <button type="button" class="composer-cancel" on:click={cancelReply} disabled={commentSubmitting}>Отмена</button>
+                                </div>
+                            {/if}
+
+                            <textarea
+                                class="composer-input"
+                                placeholder={replyParentCommentId ? 'Написать ответ…' : 'Написать комментарий…'}
+                                rows="3"
+                                bind:value={commentMessage}
+                                disabled={commentSubmitting}
+                            ></textarea>
+
+                            {#if commentError}
+                                <div class="composer-error">{commentError}</div>
+                            {/if}
+
+                            <div class="composer-actions">
+                                <label class="composer-spoiler">
+                                    <input type="checkbox" bind:checked={commentIsSpoiler} disabled={commentSubmitting} />
+                                    Спойлер
+                                </label>
+                                <button class="composer-send" on:click={submitComment} disabled={commentSubmitting || !commentMessage.trim()}>
+                                    {commentSubmitting ? 'Отправка…' : 'Отправить'}
+                                </button>
+                            </div>
+                        {:else}
+                            <div class="composer-login">
+                                <button class="composer-login-btn" on:click={() => goto('/login')}>Войти, чтобы комментировать</button>
+                            </div>
+                        {/if}
+                    </div>
+
                     {#if comments.length > 0}
                         <div class="comments-list">
                             {#each comments as comment (comment.id)}
@@ -804,6 +932,13 @@
                                                 <span class="comment-date">{commentDate ? commentDate.toLocaleDateString('ru-RU') : ''}</span>
                                             </div>
                                             <p class="comment-text">{comment.message}</p>
+
+                                            {#if utoken}
+                                                <button class="comment-reply-btn" on:click={() => startReplyTo(comment)} disabled={commentSubmitting}>
+                                                    Ответить
+                                                </button>
+                                            {/if}
+
                                             {#if comment.reply_count > 0}
                                                 <button class="reply-toggle" on:click={() => toggleReplies(comment)}>
                                                     ↳ {expandedReplies[comment.id] ? 'Скрыть' : 'Показать'} {comment.reply_count} ответов
@@ -910,6 +1045,133 @@
         gap: 30px;
         max-width: 1400px;
         margin: 0 auto;
+    }
+
+    .comment-composer {
+        background: var(--alt-background-color);
+        border-radius: 12px;
+        padding: 12px;
+        margin: 12px 0 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .composer-reply {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 13px;
+        color: var(--secondary-text-color);
+    }
+
+    .composer-cancel {
+        border: none;
+        background: transparent;
+        color: var(--primary-color);
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .composer-input {
+        width: 100%;
+        resize: vertical;
+        min-height: 84px;
+        padding: 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: var(--background-color);
+        color: var(--text-color);
+        line-height: 1.4;
+        outline: none;
+    }
+
+    .composer-input:focus {
+        border-color: rgba(204, 46, 86, 0.6);
+    }
+
+    .composer-error {
+        font-size: 12px;
+        color: var(--danger-color);
+    }
+
+    .composer-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .composer-spoiler {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--secondary-text-color);
+        user-select: none;
+    }
+
+    .composer-send {
+        padding: 10px 16px;
+        border: none;
+        border-radius: 10px;
+        background: var(--primary-color);
+        color: white;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .composer-send:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .composer-login {
+        display: flex;
+        justify-content: flex-start;
+    }
+
+    .composer-login-btn {
+        padding: 10px 14px;
+        border: none;
+        border-radius: 10px;
+        background: var(--primary-color);
+        color: white;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .comment-reply-btn {
+        margin-top: 8px;
+        border: none;
+        background: transparent;
+        color: var(--primary-color);
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        padding: 0;
+        text-align: left;
+    }
+
+    .comment-reply-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    @media (max-width: 768px) {
+        .comment-composer {
+            padding: 10px;
+        }
+
+        .composer-input {
+            min-height: 72px;
+        }
+
+        .composer-actions {
+            justify-content: space-between;
+        }
     }
 
     .left-panel {

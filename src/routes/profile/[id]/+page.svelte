@@ -154,19 +154,81 @@
     $: totalBookmarks = bookmarkStats.watching + bookmarkStats.planned + bookmarkStats.watched + bookmarkStats.hold + bookmarkStats.dropped;
 
     function toDate(ts) {
+        if (ts === null || ts === undefined) return null;
+        if (ts instanceof Date) return Number.isNaN(ts.getTime()) ? null : ts;
+
+        // Accept numeric strings, seconds/ms, and ISO date strings.
+        if (typeof ts === 'string') {
+            const s = ts.trim();
+            if (!s) return null;
+
+            // Numeric string
+            if (/^\d+$/.test(s)) {
+                const n = Number(s);
+                if (!Number.isFinite(n) || n <= 0) return null;
+                return new Date(n > 10_000_000_000 ? n : n * 1000);
+            }
+
+            const d = new Date(s);
+            return Number.isNaN(d.getTime()) ? null : d;
+        }
+
         const n = Number(ts);
         if (!Number.isFinite(n) || n <= 0) return null;
-        return new Date(n > 10_000_000_000 ? n : n * 1000);
+        const d = new Date(n > 10_000_000_000 ? n : n * 1000);
+        return Number.isNaN(d.getTime()) ? null : d;
     }
 
     function getVoteDate(item) {
-        return (
-            toDate(item?.timestamp) ||
-            toDate(item?.creation_date) ||
-            toDate(item?.created_at) ||
-            toDate(item?.last_update_date) ||
-            null
-        );
+        const releaseTs =
+            item?.release?.timestamp ??
+            item?.release?.creation_date ??
+            item?.release?.created_at ??
+            null;
+
+        const releaseLastUpdateTs = item?.release?.last_update_date ?? null;
+
+        const releaseMs = releaseTs != null ? toDate(releaseTs)?.getTime() ?? null : null;
+
+        const releaseLastUpdateMs =
+            releaseLastUpdateTs != null ? toDate(releaseLastUpdateTs)?.getTime() ?? null : null;
+
+        const voteCandidates = [
+            item?.vote_timestamp,
+            item?.vote_date,
+            item?.my_vote_timestamp,
+            item?.my_vote_date,
+            item?.user_vote_timestamp,
+            item?.user_vote_date,
+            item?.vote?.timestamp,
+            item?.vote?.created_at
+        ];
+
+        for (const ts of voteCandidates) {
+            if (ts == null) continue;
+
+            const d = toDate(ts);
+            if (!d) continue;
+            return d;
+        }
+
+        const fallbackCandidates = [item?.timestamp, item?.creation_date, item?.created_at, item?.last_update_date];
+
+        for (const ts of fallbackCandidates) {
+            if (ts == null) continue;
+
+            const d = toDate(ts);
+            if (!d) continue;
+
+            if (releaseMs != null && d.getTime() === releaseMs) continue;
+            if (releaseLastUpdateMs != null && d.getTime() === releaseLastUpdateMs) continue;
+
+            if (releaseMs != null && d.getTime() <= releaseMs) continue;
+
+            return d;
+        }
+
+        return null;
     }
 
     function getTopPreferred(list, max = 3) {

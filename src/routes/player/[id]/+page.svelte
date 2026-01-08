@@ -19,6 +19,7 @@
     let selectedSource = null;
     let selectedEpisode = null;
     let videoUrl = '';
+    let videoEl = null;
     let isLoading = true;
     let isLoadingEpisodes = false;
     let isLoadingVideo = false;
@@ -30,6 +31,50 @@
     let showEpisodeSelector = false;
     let showDubberSelector = false;
     let isMobile = false;
+
+    function getEpisodePos(ep) {
+        const raw = ep?.position ?? ep?.episode ?? ep?.number ?? ep?.index ?? null;
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : null;
+    }
+
+    function isEpisodeActive(a, b) {
+        if (!a || !b) return false;
+
+        const ap = getEpisodePos(a);
+        const bp = getEpisodePos(b);
+        if (ap != null && bp != null && ap === bp) return true;
+
+        if (a.id != null && b.id != null && a.id === b.id) return true;
+        if (a.url && b.url && a.url === b.url) return true;
+
+        return false;
+    }
+
+    function isDirectVideoUrl(url) {
+        const u = String(url || '').toLowerCase();
+        return u.endsWith('.mp4') || u.includes('.mp4?') || u.endsWith('.m3u8') || u.includes('.m3u8?');
+    }
+
+    $: isDirectVideo = isDirectVideoUrl(videoUrl);
+    $: pipSupported =
+        browser &&
+        isDirectVideo &&
+        typeof document !== 'undefined' &&
+        !!document.pictureInPictureEnabled;
+
+    async function togglePiP() {
+        if (!pipSupported || !videoEl) return;
+        try {
+            if (document.pictureInPictureElement) {
+                await document.exitPictureInPicture();
+            } else {
+                await videoEl.requestPictureInPicture();
+            }
+        } catch (e) {
+            console.error('Error toggling PiP:', e);
+        }
+    }
 
     function syncMobileState() {
         if (!browser) return;
@@ -68,7 +113,6 @@
         try {
             // Load release info
             const data = await api.release.info(releaseId, true);
-            console.log('Release data:', data);
             
             if (data.release) {
                 release = data.release;
@@ -88,7 +132,6 @@
     async function loadDubbers() {
         try {
             const dubbersData = await api.release.getDubbers(releaseId);
-            console.log('Dubbers:', dubbersData);
             dubbers = dubbersData.types || [];
             
             if (dubbers.length > 0) {
@@ -105,11 +148,11 @@
         episodes = [];
         selectedSource = null;
         selectedEpisode = null;
+        videoUrl = '';
         
         try {
             // Load sources for this dubber
             const sourcesData = await api.release.getDubberSources(releaseId, dubber.id);
-            console.log('Sources for dubber:', sourcesData);
             sources = sourcesData.sources || [];
             
             if (sources.length > 0) {
@@ -124,13 +167,23 @@
         selectedSource = source;
         episodes = [];
         selectedEpisode = null;
+        videoUrl = '';
         isLoadingEpisodes = true;
         
         try {
             // Load episodes for this source
             const episodesData = await api.release.getEpisodes(releaseId, selectedDubber.id, source.id);
-            console.log('Episodes:', episodesData);
-            episodes = episodesData.episodes || [];
+            const nextEpisodes = (episodesData.episodes || []).slice();
+            nextEpisodes.sort((a, b) => {
+                const ap = getEpisodePos(a);
+                const bp = getEpisodePos(b);
+                if (ap == null && bp == null) return 0;
+                if (ap == null) return 1;
+                if (bp == null) return -1;
+                return ap - bp;
+            });
+
+            episodes = nextEpisodes;
             
             if (episodes.length > 0) {
                 await selectEpisode(episodes[0]);
@@ -144,12 +197,14 @@
     async function selectEpisode(episode) {
         selectedEpisode = episode;
         await loadVideoUrl();
+
+        const pos = getEpisodePos(episode);
         
         // Add to history and mark as watched
-        if (api && selectedSource) {
+        if (api && selectedSource && pos != null) {
             try {
-                await api.release.addToHistory(releaseId, selectedSource.id, episode.position);
-                await api.release.markEpisodeAsWatched(releaseId, selectedSource.id, episode.position);
+                await api.release.addToHistory(releaseId, selectedSource.id, pos);
+                await api.release.markEpisodeAsWatched(releaseId, selectedSource.id, pos);
             } catch (e) {
                 console.error('Error updating history:', e);
             }
@@ -163,20 +218,13 @@
         videoUrl = '';
         
         try {
-            console.log('Loading video for episode:', selectedEpisode);
-            
             // Get the episode URL
             let episodeUrl = selectedEpisode.url;
-            const sourceName = selectedSource?.name || '';
-            console.log('Source name:', sourceName, 'URL:', episodeUrl);
             
             if (episodeUrl) {
                 // Make sure URL has protocol
                 const fullUrl = episodeUrl.startsWith('http') ? episodeUrl : `https:${episodeUrl}`;
                 videoUrl = fullUrl;
-                console.log('Video URL:', videoUrl);
-            } else {
-                console.log('No URL found for episode');
             }
         } catch (e) {
             console.error('Error loading video:', e);
@@ -194,9 +242,10 @@
 
     function getEpisodeIndex() {
         if (!selectedEpisode) return -1;
-        const pos = Number(selectedEpisode.position);
-        if (!Number.isNaN(pos)) {
-            const idxByPos = episodes.findIndex(e => Number(e.position) === pos);
+
+        const pos = getEpisodePos(selectedEpisode);
+        if (pos != null) {
+            const idxByPos = episodes.findIndex(e => getEpisodePos(e) === pos);
             if (idxByPos !== -1) return idxByPos;
         }
         if (selectedEpisode.id != null) {
@@ -211,7 +260,7 @@
     $: canNext = currentEpisodeIndex >= 0 && currentEpisodeIndex < episodes.length - 1;
     $: currentDubberName = selectedDubber?.name || '';
     $: currentSourceName = selectedSource?.name || '';
-    $: currentEpisodeName = selectedEpisode ? `Эпизод ${selectedEpisode.position}` : '';
+    $: currentEpisodeName = selectedEpisode ? `Эпизод ${getEpisodePos(selectedEpisode) ?? selectedEpisode.position ?? ''}` : '';
 
     function nextEpisode() {
         if (!canNext) return;
@@ -234,7 +283,7 @@
     {:else if error}
         <div class="error-state">
             <h2>😔 {error}</h2>
-            <a href="/" class="back-btn">Вернуться на главную</a>
+            <a href="/" class="error-back-btn">Вернуться на главную</a>
         </div>
     {:else if release}
         <div 
@@ -244,15 +293,25 @@
             <!-- Video element -->
             <div class="video-wrapper">
                 {#if videoUrl}
-                    <!-- All sources use iframe since they are embed URLs -->
-                    <iframe 
-                        src={videoUrl}
-                        class="video-iframe"
-                        allowfullscreen
-                        allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                        title="Video Player"
-                        referrerpolicy="origin"
-                    ></iframe>
+                    {#if isDirectVideo}
+                        <video
+                            bind:this={videoEl}
+                            class="video-element"
+                            src={videoUrl}
+                            controls
+                            playsinline
+                        ></video>
+                    {:else}
+                        <!-- Embed sources -->
+                        <iframe 
+                            src={videoUrl}
+                            class="video-iframe"
+                            allowfullscreen
+                            allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+                            title="Video Player"
+                            referrerpolicy="origin"
+                        ></iframe>
+                    {/if}
                 {:else if isLoadingVideo}
                     <div class="video-loading">
                         <Preloader />
@@ -266,7 +325,7 @@
 
             <!-- Simple top bar with back button and title -->
             <div class="player-top-bar">
-                <button class="back-btn" on:click={goBack} title="Назад">
+                <button class="top-back-btn" on:click={goBack} title="Назад">
                     <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
                         <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
                     </svg>
@@ -274,7 +333,7 @@
                 <div class="title-info">
                     <span class="anime-title">{release.title_ru}</span>
                     {#if selectedEpisode}
-                        <span class="episode-title">• Эпизод {selectedEpisode.position}</span>
+                        <span class="episode-title">• {currentEpisodeName}</span>
                     {/if}
                     {#if selectedDubber}
                         <span class="dubber-title">• {selectedDubber.name}{selectedSource?.name ? ` (${selectedSource.name})` : ''}</span>
@@ -292,6 +351,13 @@
                                 <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
                             </svg>
                         </button>
+                        {#if pipSupported}
+                            <button class="nav-btn" on:click={togglePiP} title="Картинка в картинке">
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                                    <path d="M19 11h-8v6h8v-6zm2-7H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H3V6h18v12z"/>
+                                </svg>
+                            </button>
+                        {/if}
                     </div>
                 {/if}
             </div>
@@ -382,10 +448,10 @@
                                 {#each episodes as episode}
                                     <button 
                                         class="mobile-episode-btn"
-                                        class:active={selectedEpisode?.position === episode.position}
+                                        class:active={isEpisodeActive(selectedEpisode, episode)}
                                         on:click={() => selectEpisode(episode)}
                                     >
-                                        {episode.position}
+                                        {getEpisodePos(episode) ?? episode.position}
                                     </button>
                                 {/each}
                             </div>
@@ -419,6 +485,11 @@
                             </svg>
                         </button>
                     </div>
+                    {#if pipSupported}
+                        <button class="pip-btn" on:click={togglePiP}>
+                            Картинка в картинке
+                        </button>
+                    {/if}
                 {/if}
             </div>
         {/if}
@@ -473,11 +544,11 @@
                             {#each episodes as episode}
                                 <button 
                                     class="episode-btn"
-                                    class:active={selectedEpisode?.position === episode.position}
+                                    class:active={isEpisodeActive(selectedEpisode, episode)}
                                     on:click={() => selectEpisode(episode)}
                                     title={episode.name || `Эпизод ${episode.position}`}
                                 >
-                                    {episode.position}
+                                    {getEpisodePos(episode) ?? episode.position}
                                 </button>
                             {/each}
                         </div>
@@ -489,7 +560,7 @@
                 <!-- Current episode info -->
                 {#if selectedEpisode}
                     <div class="current-episode-info">
-                        <span class="episode-name">{selectedEpisode.name || `Эпизод ${selectedEpisode.position}`}</span>
+                        <span class="episode-name">{selectedEpisode.name || currentEpisodeName}</span>
                     </div>
                 {/if}
             </div>
@@ -536,6 +607,13 @@
         object-fit: contain;
     }
 
+    .video-element {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        background: #000;
+    }
+
     .video-iframe {
         width: 100%;
         height: 100%;
@@ -554,7 +632,7 @@
         z-index: 10;
     }
 
-    .back-btn {
+    .top-back-btn {
         display: inline-flex;
         align-items: center;
         gap: 10px;
@@ -567,16 +645,16 @@
         cursor: pointer;
     }
 
-    .back-btn:hover {
+    .top-back-btn:hover {
         background: rgba(0,0,0,0.8);
     }
 
-    .back-btn:active {
+    .top-back-btn:active {
         background: rgba(0,0,0,0.9);
         transform: scale(0.95);
     }
 
-    .back-btn svg {
+    .top-back-btn svg {
         width: 24px;
         height: 24px;
     }
@@ -937,7 +1015,7 @@
         text-align: center;
     }
 
-    .back-btn {
+    .error-back-btn {
         padding: 12px 24px;
         background: var(--primary-color);
         color: white;
@@ -945,6 +1023,24 @@
         border-radius: 8px;
         font-weight: 500;
         margin-top: 20px;
+    }
+
+    .pip-btn {
+        width: 100%;
+        margin-top: 10px;
+        padding: 12px 14px;
+        border: none;
+        border-radius: 12px;
+        background: var(--alt-background-color);
+        color: var(--text-color);
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .pip-btn:active {
+        background: var(--primary-color);
+        color: white;
     }
 
     /* Mobile controls panel */

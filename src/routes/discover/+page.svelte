@@ -55,10 +55,7 @@
                 api.release.filter(0, { sort: 1, status_id: null, category_id: null }, true).catch(() => ({ content: [] })),
                 api.collection.all(0, 4).catch(() => ({ content: [] }))
             ]);
-            
-            console.log('Interesting:', interesting);
-            console.log('Watching:', watching);
-            
+
             discoverData = {
                 interesting: interesting.content || interesting.releases || [],
                 discussing: discussing.content || [],
@@ -144,6 +141,13 @@
                     <path d="M10 18h4v-2h-4v2zm-7-8v2h18v-2H3zm3-6v2h12V4H6z"/>
                 </svg>
                 <span class="action-text">Фильтр</span>
+            </a>
+
+            <a class="action-btn action-btn--random" href="/random">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                    <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/>
+                </svg>
+                <span class="action-text">Случайное</span>
             </a>
         </section>
 
@@ -265,7 +269,7 @@
 
     .quick-actions {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
         gap: 12px;
         margin: 10px 0 30px;
     }
@@ -301,6 +305,19 @@
 
     .action-btn--filter {
         background: #2bb673;
+    }
+
+    .action-btn--random {
+        background: #cc2e56;
+    }
+
+    .carousel {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        width: 100%;
     }
 
     @media (max-width: 768px) {
@@ -397,6 +414,7 @@
     }
 
     .carousel-track {
+        position: relative;
         display: flex;
         gap: 20px;
         justify-content: center;
@@ -695,8 +713,14 @@
             padding-top: 20px;
         }
 
-        .quick-actions {
-            grid-template-columns: 1fr;
+        .action-btn {
+            padding: 12px;
+            border-radius: 12px;
+            gap: 8px;
+        }
+
+        .action-text {
+            font-size: 14px;
         }
 
         .popular-grid {
