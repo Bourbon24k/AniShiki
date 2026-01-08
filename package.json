@@ -18,6 +18,10 @@
   ],
   "author": "Bourbon24k",
   "license": "GPL-2.0",
+  "engines": {
+    "node": "18.x || 20.x",
+    "npm": ">=9"
+  },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^3.0.0",
     "@sveltejs/kit": "^2.0.0",
