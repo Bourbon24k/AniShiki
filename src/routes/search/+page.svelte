@@ -24,6 +24,14 @@
     let isLoadingFranchise = false;
     let expandedFranchises = {};
     let franchiseReleases = {};
+    let loadingFranchiseReleases = {};
+
+    function hideBrokenThumb(e) {
+        try {
+            e.currentTarget.style.display = 'none';
+        } catch (_) {
+        }
+    }
 
     $: utoken = $userToken;
 
@@ -302,11 +310,24 @@
         const relatedResults = await Promise.all(
             candidates.map(async (release) => {
                 try {
-                    const franchiseId = Number(release?.related?.id ?? release?.related?.['@id'] ?? release.id);
-                    if (!Number.isFinite(franchiseId)) return null;
+                    let franchiseId = Number(release?.related?.id ?? release?.related?.['@id'] ?? 0);
+                    let base = release;
+
+                    if (!Number.isFinite(franchiseId) || !franchiseId) {
+                        try {
+                            const info = await api.release.info(release.id, false);
+                            if (info?.release) {
+                                base = info.release;
+                                franchiseId = Number(info.release?.related?.id ?? info.release?.related?.['@id'] ?? 0);
+                            }
+                        } catch (_) {
+                        }
+                    }
+
+                    if (!Number.isFinite(franchiseId) || !franchiseId) return null;
 
                     const data = await api.release.getRelatedReleases(franchiseId, 0);
-                    return { base: release, franchise: data?.related || null, related: data?.content || [] };
+                    return { base, franchiseId, franchise: data?.related || null, related: data?.content || [] };
                 } catch (e) {
                     return null;
                 }
@@ -322,23 +343,22 @@
             return;
         }
 
-        const posters = [best.base, ...best.related]
-            .filter(x => x && x.image)
+        const posters = (best.related || [])
+            .filter(x => x && (x.image || x.poster))
             .filter((x, idx, arr) => arr.findIndex(y => y.id === x.id) === idx)
             .slice(0, 3);
 
         const f = best.franchise || {};
-        const franchiseId = f.id ?? f['@id'] ?? best.base?.related?.id ?? best.base?.related?.['@id'] ?? best.base.id;
+        const franchiseId = best.franchiseId ?? f.id ?? f['@id'] ?? best.base?.related?.id ?? best.base?.related?.['@id'] ?? 0;
         franchises = [
             {
-                // NOTE: /franchise/[id] route expects a release id; it then loads franchise meta via getRelatedReleases(id)
                 id: franchiseId,
                 name_ru: f.name_ru || f.title_ru || best.base.title_ru,
                 name: f.name || best.base.title_original,
                 description: f.description || best.base.description,
                 image: f.image || best.base.image,
                 count: best.related.length + 1,
-                releases: posters
+                releases: posters.length > 0 ? posters : [best.base].filter(x => x && (x.image || x.poster))
             }
         ];
     }
@@ -351,6 +371,8 @@
         }
 
         if (!franchiseReleases[franchiseId]) {
+            loadingFranchiseReleases[franchiseId] = true;
+            loadingFranchiseReleases = { ...loadingFranchiseReleases };
             try {
                 const id = Number(franchiseId);
                 if (!Number.isFinite(id)) return;
@@ -361,6 +383,9 @@
             } catch (e) {
                 console.error('Error loading franchise releases:', e);
                 return;
+            } finally {
+                loadingFranchiseReleases[franchiseId] = false;
+                loadingFranchiseReleases = { ...loadingFranchiseReleases };
             }
         }
 
@@ -578,10 +603,18 @@
                                     <div class="franchise-posters">
                                         {#if franchise.releases?.length > 0}
                                             {#each franchise.releases.slice(0, 3) as release, i}
-                                                <img src={release.image} alt="" class="franchise-poster" style="z-index: {3 - i}" />
+                                                <img
+                                                    src={release.image || release.poster}
+                                                    alt=""
+                                                    class="franchise-poster"
+                                                    style="z-index: {3 - i}"
+                                                    loading="lazy"
+                                                    referrerpolicy="no-referrer"
+                                                    on:error={hideBrokenThumb}
+                                                />
                                             {/each}
                                         {:else if franchise.image}
-                                            <img src={franchise.image} alt="" class="franchise-poster" />
+                                            <img src={franchise.image} alt="" class="franchise-poster" loading="lazy" referrerpolicy="no-referrer" on:error={hideBrokenThumb} />
                                         {:else}
                                             <div class="franchise-poster-placeholder">
                                                 <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
@@ -602,11 +635,18 @@
                                     class="franchise-expand-btn" 
                                     on:click={() => toggleFranchise(franchise.id)}
                                     aria-label="{expandedFranchises[franchise.id] ? 'Скрыть' : 'Показать'} все релизы"
+                                    disabled={!!loadingFranchiseReleases[franchise.id]}
                                 >
                                     <svg viewBox="0 0 24 24" fill="currentColor" class="expand-icon" class:expanded={expandedFranchises[franchise.id]}>
                                         <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
                                     </svg>
-                                    <span>{expandedFranchises[franchise.id] ? 'Скрыть' : 'Показать все'}</span>
+                                    <span>
+                                        {#if loadingFranchiseReleases[franchise.id]}
+                                            Загрузка...
+                                        {:else}
+                                            {expandedFranchises[franchise.id] ? 'Скрыть' : 'Показать все'}
+                                        {/if}
+                                    </span>
                                 </button>
                             </div>
                             {#if expandedFranchises[franchise.id] && franchiseReleases[franchise.id]}
@@ -936,6 +976,12 @@
         border-radius: 12px;
         margin-bottom: 12px;
         overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        transition: filter 0.2s;
+    }
+
+    .franchise-card:hover {
+        filter: brightness(1.03);
     }
 
     .franchise-header-row {
@@ -981,6 +1027,11 @@
         cursor: pointer;
         transition: all 0.2s;
         flex-shrink: 0;
+    }
+
+    .franchise-expand-btn:disabled {
+        opacity: 0.7;
+        cursor: default;
     }
 
     .franchise-expand-btn:hover {

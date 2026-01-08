@@ -14,6 +14,8 @@
     let hasMore = true;
     let currentPage = 0;
     let api = null;
+    let loadedProfileId = null;
+    let supportsPaging = true;
 
     onMount(async () => {
         if (browser) {
@@ -23,10 +25,19 @@
         }
     });
 
+    $: if (browser && api && profileId && loadedProfileId !== profileId) {
+        loadProfile();
+        loadHistory();
+    }
+
     async function loadProfile() {
         if (!api) return;
         try {
-            const data = await api.profile.info(profileId);
+            const id = Number(profileId);
+            if (!Number.isFinite(id)) return;
+
+            loadedProfileId = profileId;
+            const data = await api.profile.info(id);
             profile = data.profile;
         } catch (e) {
             console.error('Error loading profile:', e);
@@ -35,15 +46,24 @@
 
     async function loadHistory() {
         if (!api) return;
+        const id = Number(profileId);
+        if (!Number.isFinite(id)) return;
+
         isLoading = true;
         currentPage = 0;
+        supportsPaging = true;
         
         try {
-            const data = await api.profile.getHistory ? 
-                await api.profile.getHistory(profileId, 0) :
-                await api.release.getHistory(0);
-            history = data.content || [];
-            hasMore = history.length >= 25;
+            if (api.profile.getHistory) {
+                const data = await api.profile.getHistory(id, 0);
+                history = data.content || [];
+                hasMore = history.length >= 25;
+            } else {
+                const data = await api.profile.info(id);
+                history = data?.profile?.history || [];
+                hasMore = false;
+                supportsPaging = false;
+            }
         } catch (e) {
             console.error('Error loading history:', e);
             history = [];
@@ -52,14 +72,15 @@
     }
 
     async function loadMore() {
-        if (!api || isLoadingMore || !hasMore) return;
+        if (!api || isLoadingMore || !hasMore || !supportsPaging) return;
+        const id = Number(profileId);
+        if (!Number.isFinite(id)) return;
+
         isLoadingMore = true;
         currentPage++;
         
         try {
-            const data = await api.profile.getHistory ? 
-                await api.profile.getHistory(profileId, currentPage) :
-                await api.release.getHistory(currentPage);
+            const data = await api.profile.getHistory(id, currentPage);
             const newItems = data.content || [];
             history = [...history, ...newItems];
             hasMore = newItems.length >= 25;

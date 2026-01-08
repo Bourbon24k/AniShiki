@@ -14,6 +14,23 @@
     let hasMore = true;
     let currentPage = 0;
     let api = null;
+    let loadedProfileId = null;
+
+    function toDate(ts) {
+        const n = Number(ts);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        return new Date(n > 10_000_000_000 ? n : n * 1000);
+    }
+
+    function getVoteDate(item) {
+        return (
+            toDate(item?.timestamp) ||
+            toDate(item?.creation_date) ||
+            toDate(item?.created_at) ||
+            toDate(item?.last_update_date) ||
+            null
+        );
+    }
 
     onMount(async () => {
         if (browser) {
@@ -23,10 +40,19 @@
         }
     });
 
+    $: if (browser && api && profileId && loadedProfileId !== profileId) {
+        loadProfile();
+        loadVotes();
+    }
+
     async function loadProfile() {
         if (!api) return;
         try {
-            const data = await api.profile.info(profileId);
+            const id = Number(profileId);
+            if (!Number.isFinite(id)) return;
+
+            loadedProfileId = profileId;
+            const data = await api.profile.info(id);
             profile = data.profile;
         } catch (e) {
             console.error('Error loading profile:', e);
@@ -35,13 +61,14 @@
 
     async function loadVotes() {
         if (!api) return;
+        const id = Number(profileId);
+        if (!Number.isFinite(id)) return;
+
         isLoading = true;
         currentPage = 0;
         
         try {
-            const data = await api.profile.getVotes ? 
-                await api.profile.getVotes(profileId, 0) :
-                { content: [] };
+            const data = await api.profile.getVotedReleases(id, 0);
             votes = data.content || [];
             hasMore = votes.length >= 25;
         } catch (e) {
@@ -53,13 +80,14 @@
 
     async function loadMore() {
         if (!api || isLoadingMore || !hasMore) return;
+        const id = Number(profileId);
+        if (!Number.isFinite(id)) return;
+
         isLoadingMore = true;
         currentPage++;
         
         try {
-            const data = await api.profile.getVotes ? 
-                await api.profile.getVotes(profileId, currentPage) :
-                { content: [] };
+            const data = await api.profile.getVotedReleases(id, currentPage);
             const newItems = data.content || [];
             votes = [...votes, ...newItems];
             hasMore = newItems.length >= 25;
@@ -96,6 +124,7 @@
         {:else}
             <div class="votes-grid">
                 {#each votes as item (item.release?.id || item.id)}
+                    {@const voteDate = getVoteDate(item)}
                     <a href="/release/{item.release?.id || item.id}" class="vote-card">
                         <img src={item.release?.image || item.image} alt="" class="vote-poster" />
                         <div class="vote-badge">
@@ -103,8 +132,11 @@
                         </div>
                         <div class="vote-info">
                             <span class="vote-title">{item.release?.title_ru || item.title_ru}</span>
-                            {#if item.timestamp}
-                                <span class="vote-date">{new Date(item.timestamp * 1000).toLocaleDateString('ru-RU')}</span>
+                            {#if item.release?.description || item.description}
+                                <span class="vote-desc">{(item.release?.description || item.description).slice(0, 90)}{(item.release?.description || item.description).length > 90 ? '...' : ''}</span>
+                            {/if}
+                            {#if voteDate}
+                                <span class="vote-date">{voteDate.toLocaleDateString('ru-RU')}</span>
                             {/if}
                         </div>
                     </a>
@@ -217,6 +249,17 @@
     .vote-date {
         font-size: 11px;
         color: var(--secondary-text-color);
+    }
+
+    .vote-desc {
+        font-size: 11px;
+        color: var(--secondary-text-color);
+        opacity: 0.9;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
     }
 
     .empty-state {
