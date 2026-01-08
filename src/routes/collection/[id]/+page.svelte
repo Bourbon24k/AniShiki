@@ -13,6 +13,7 @@
     let isLoading = true;
     let error = null;
     let api = null;
+    let loadedCollectionId = null;
 
     onMount(async () => {
         if (browser) {
@@ -21,13 +22,24 @@
         }
     });
 
+    $: if (browser && api && collectionId && loadedCollectionId !== collectionId) {
+        loadCollection();
+    }
+
     async function loadCollection() {
         if (!api) return;
+        loadedCollectionId = collectionId;
         isLoading = true;
         error = null;
         try {
-            const data = await api.collection.info(collectionId);
-            console.log('Collection data:', data);
+            const id = Number(collectionId);
+            if (!Number.isFinite(id)) {
+                error = 'Коллекция не найдена';
+                isLoading = false;
+                return;
+            }
+
+            const data = await api.collection.info(id);
             if (data.collection) {
                 collection = data.collection;
                 // Load releases separately
@@ -44,8 +56,12 @@
 
     async function loadReleases() {
         try {
-            const releasesData = await api.collection.getCollectionReleases(collectionId, 0);
-            console.log('Collection releases:', releasesData);
+            const id = Number(collectionId);
+            if (!Number.isFinite(id)) {
+                releases = [];
+                return;
+            }
+            const releasesData = await api.collection.getCollectionReleases(id, 0);
             releases = releasesData.content || [];
         } catch (e) {
             console.error('Error loading collection releases:', e);

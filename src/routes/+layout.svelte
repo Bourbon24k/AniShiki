@@ -2,6 +2,7 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
+	import { page } from '$app/stores';
 	import { guiSettings, userToken, notificationCount } from '$lib/stores';
 	import { getApi } from '$lib/api';
 	import LeftMenu from '$lib/components/LeftMenu.svelte';
@@ -10,6 +11,8 @@
 	import SlideMenu from '$lib/components/SlideMenu.svelte';
 
 	let isMobile = false;
+	$: currentPath = $page.url.pathname;
+	$: isAuthRoute = currentPath === '/login' || currentPath === '/register';
 
 	onMount(() => {
 		if (browser) {
@@ -42,19 +45,21 @@
 </script>
 
 <div class="app-container" class:mobile={isMobile}>
-	<Header />
-	{#if isMobile}
-		<SlideMenu />
+	{#if !isAuthRoute}
+		<Header />
+		{#if isMobile}
+			<SlideMenu />
+		{/if}
 	{/if}
 	<div class="main-content">
 		{#if !isMobile}
 			<LeftMenu />
 		{/if}
-		<main class="viewport">
+		<main class="viewport" class:auth={isAuthRoute}>
 			<slot />
 		</main>
 	</div>
-	{#if isMobile}
+	{#if isMobile && !isAuthRoute}
 		<MobileNav />
 	{/if}
 </div>
@@ -90,6 +95,10 @@
 
 	.app-container.mobile .viewport {
 		padding-bottom: calc(64px + env(safe-area-inset-bottom, 0));
+	}
+
+	.app-container.mobile .viewport.auth {
+		padding-bottom: 0;
 	}
 
 	:global(body) {

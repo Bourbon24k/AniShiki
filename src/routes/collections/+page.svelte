@@ -12,6 +12,13 @@
     let isLoadingMore = false;
     let api = null;
 
+    let isCreateOpen = false;
+    let createSubmitting = false;
+    let createTitle = '';
+    let createDescription = '';
+    let createIsPrivate = false;
+    let createError = '';
+
     onMount(async () => {
         if (browser) {
             api = getApi();
@@ -24,9 +31,7 @@
         isLoading = true;
         page = 0;
         try {
-            console.log('Loading collections with sort:', selectedSort, 'page:', page);
-            const data = await api.collection.all(page, selectedSort);
-            console.log('Collections response:', data);
+            const data = await api.collection.all(page, Number(selectedSort));
             collections = data.content || [];
         } catch (e) {
             console.error('Error loading collections:', e);
@@ -39,7 +44,7 @@
         isLoadingMore = true;
         page++;
         try {
-            const data = await api.collection.all(page, selectedSort);
+            const data = await api.collection.all(page, Number(selectedSort));
             collections = [...collections, ...(data.content || [])];
         } catch (e) {
             console.error('Error loading more:', e);
@@ -51,6 +56,42 @@
         if (selectedSort === sort) return;
         selectedSort = sort;
         loadCollections();
+    }
+
+    async function createCollection() {
+        if (!api?.collection?.createCollection) return;
+        if (!createTitle.trim()) {
+            createError = 'Введите название';
+            return;
+        }
+
+        createSubmitting = true;
+        createError = '';
+
+        try {
+            const payload = {
+                title: createTitle.trim(),
+                description: createDescription.trim(),
+                releases: [],
+                is_private: !!createIsPrivate
+            };
+
+            const res = await api.collection.createCollection(payload);
+            if (res?.collection) {
+                isCreateOpen = false;
+                createTitle = '';
+                createDescription = '';
+                createIsPrivate = false;
+                await loadCollections();
+            } else {
+                createError = 'Не удалось создать коллекцию';
+            }
+        } catch (e) {
+            console.error('Error creating collection:', e);
+            createError = 'Ошибка создания коллекции';
+        }
+
+        createSubmitting = false;
     }
 
     function handleScroll(e) {
@@ -68,11 +109,14 @@
 <div class="collections-page" on:scroll={handleScroll}>
     <div class="collections-header">
         <h1>Коллекции</h1>
+        <div class="header-actions">
+            <button type="button" class="create-btn" on:click={() => isCreateOpen = true}>Создать</button>
+        </div>
         <div class="sort-wrapper">
             <select 
                 class="sort-select"
-                bind:value={selectedSort}
                 on:change={(e) => setSort(parseInt(/** @type {HTMLSelectElement} */ (e.currentTarget).value))}
+                value={selectedSort}
             >
                 {#each collectionSortValues as option}
                     <option value={option.value}>{option.label}</option>
@@ -80,6 +124,29 @@
             </select>
         </div>
     </div>
+
+    {#if isCreateOpen}
+        <div class="modal-backdrop" on:click={() => { if (!createSubmitting) isCreateOpen = false; }}>
+            <div class="modal" role="dialog" aria-modal="true" on:click|stopPropagation>
+                <div class="modal-title">Создать коллекцию</div>
+                <div class="modal-body">
+                    <input class="modal-input" placeholder="Название" bind:value={createTitle} />
+                    <textarea class="modal-textarea" placeholder="Описание" rows="4" bind:value={createDescription} />
+                    <label class="modal-checkbox">
+                        <input type="checkbox" bind:checked={createIsPrivate} />
+                        Приватная
+                    </label>
+                    {#if createError}
+                        <div class="modal-error">{createError}</div>
+                    {/if}
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="modal-btn secondary" disabled={createSubmitting} on:click={() => isCreateOpen = false}>Отмена</button>
+                    <button type="button" class="modal-btn" disabled={createSubmitting} on:click={createCollection}>{createSubmitting ? 'Создание...' : 'Создать'}</button>
+                </div>
+            </div>
+        </div>
+    {/if}
 
     <div class="collections-content">
         {#if isLoading}
@@ -154,6 +221,30 @@
         align-items: center;
     }
 
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-left: auto;
+        margin-right: 12px;
+    }
+
+    .create-btn {
+        border: none;
+        border-radius: 10px;
+        padding: 10px 14px;
+        background: var(--primary-color);
+        color: white;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    .create-btn:hover {
+        filter: brightness(1.05);
+    }
+
     .collections-header h1 {
         font-size: 24px;
         margin: 0;
@@ -168,6 +259,97 @@
         background-color: var(--alt-background-color);
         color: var(--text-color);
         cursor: pointer;
+    }
+
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        padding: 16px;
+    }
+
+    .modal {
+        width: 100%;
+        max-width: 520px;
+        background: var(--alt-background-color);
+        border-radius: 16px;
+        padding: 16px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+
+    .modal-title {
+        font-size: 18px;
+        font-weight: 800;
+        color: var(--text-color);
+        margin-bottom: 12px;
+    }
+
+    .modal-body {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .modal-input,
+    .modal-textarea {
+        width: 100%;
+        border: none;
+        border-radius: 12px;
+        padding: 12px 14px;
+        background: var(--background-color);
+        color: var(--text-color);
+        font-size: 14px;
+        outline: none;
+    }
+
+    .modal-textarea {
+        resize: vertical;
+    }
+
+    .modal-checkbox {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        font-size: 13px;
+        color: var(--secondary-text-color);
+        user-select: none;
+    }
+
+    .modal-error {
+        font-size: 13px;
+        color: #ff6b6b;
+    }
+
+    .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 14px;
+    }
+
+    .modal-btn {
+        border: none;
+        border-radius: 12px;
+        padding: 10px 14px;
+        background: var(--primary-color);
+        color: white;
+        cursor: pointer;
+        font-weight: 700;
+        font-size: 13px;
+    }
+
+    .modal-btn.secondary {
+        background: transparent;
+        color: var(--secondary-text-color);
+    }
+
+    .modal-btn:disabled {
+        opacity: 0.7;
+        cursor: default;
     }
 
     .collections-content {

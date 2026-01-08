@@ -64,6 +64,16 @@
 
     let loadedReleaseId = null;
 
+    function getCommentDate(c) {
+        const raw = c?.timestamp ?? c?.creation_date ?? c?.created_at ?? c?.createdAt ?? null;
+        if (raw === null || raw === undefined) return null;
+        const n = Number(raw);
+        if (!Number.isFinite(n)) return null;
+        const ms = n > 1e12 ? n : n * 1000;
+        const d = new Date(ms);
+        return Number.isNaN(d.getTime()) ? null : d;
+    }
+
     async function loadRelease(options = {}) {
         if (!api) return;
 
@@ -90,8 +100,6 @@
         error = null;
         try {
             const data = await api.release.info(releaseId, true);
-            console.log('Release data:', data);
-            console.log('Genres:', data.release?.genres);
             if (data.release) {
                 release = data.release;
                 isFavorite = release.is_favorite;
@@ -733,7 +741,7 @@
                 {#if release.related_releases?.length}
                     <div class="related-section">
                         <div class="section-header">
-                            <h3>Связанные релизы ({release.related_releases.length})</h3>
+                            <h3>Связанные релизы ({release.related_count ?? release.related_releases.length})</h3>
                             <a class="franchise-link" href="/franchise/{release.related?.id || release.id}">Франшиза</a>
                         </div>
                         <div class="related-list">
@@ -764,11 +772,12 @@
                 <!-- Comments section -->
                 <div class="comments-section">
                     <div class="section-header">
-                        <h3>Комментарии ({release.comment_count || 0})</h3>
+                        <h3>Комментарии ({release.comments_count ?? release.comment_count ?? 0})</h3>
                     </div>
                     {#if comments.length > 0}
                         <div class="comments-list">
                             {#each comments as comment (comment.id)}
+                                {@const commentDate = getCommentDate(comment)}
                                 <div class="comment-item">
                                     <div class="comment-votes">
                                         <button class="vote-btn upvote" class:active={comment.vote === 2} on:click={() => voteComment(comment, 2)} title="Нравится">
@@ -792,7 +801,7 @@
                                         <div class="comment-content">
                                             <div class="comment-header">
                                                 <a href="/profile/{comment.profile?.id}" class="comment-author">{comment.profile?.login}</a>
-                                                <span class="comment-date">{new Date(comment.timestamp * 1000).toLocaleDateString('ru-RU')}</span>
+                                                <span class="comment-date">{commentDate ? commentDate.toLocaleDateString('ru-RU') : ''}</span>
                                             </div>
                                             <p class="comment-text">{comment.message}</p>
                                             {#if comment.reply_count > 0}
@@ -803,6 +812,7 @@
                                             {#if expandedReplies[comment.id] && commentReplies[comment.id]}
                                                 <div class="replies-list">
                                                     {#each commentReplies[comment.id] as reply (reply.id)}
+                                                        {@const replyDate = getCommentDate(reply)}
                                                         <div class="reply-item">
                                                             <a href="/profile/{reply.profile?.id}" class="reply-avatar">
                                                                 <img src={reply.profile?.avatar} alt={reply.profile?.login} />
@@ -810,7 +820,7 @@
                                                             <div class="reply-content">
                                                                 <div class="reply-header">
                                                                     <a href="/profile/{reply.profile?.id}" class="reply-author">{reply.profile?.login}</a>
-                                                                    <span class="reply-date">{new Date(reply.timestamp * 1000).toLocaleDateString('ru-RU')}</span>
+                                                                    <span class="reply-date">{replyDate ? replyDate.toLocaleDateString('ru-RU') : ''}</span>
                                                                 </div>
                                                                 <p class="reply-text">{reply.message}</p>
                                                             </div>
@@ -823,12 +833,12 @@
                                 </div>
                             {/each}
                         </div>
-                        {#if (release.comment_count || 0) > 5 && !showAllComments}
+                        {#if ((release.comments_count ?? release.comment_count ?? 0) > 5) && !showAllComments}
                             <button class="show-more-btn" on:click={toggleAllComments}>
                                 <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
                                     <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>
                                 </svg>
-                                Показать все комментарии ({release.comment_count})
+                                Показать все комментарии ({release.comments_count ?? release.comment_count ?? 0})
                             </button>
                         {:else if showAllComments && hasMoreComments && !isLoadingComments}
                             <button class="show-more-btn" on:click={loadMoreComments}>

@@ -244,6 +244,17 @@
                 const next = data.content || [];
                 activityItems = reset ? next : [...activityItems, ...next];
                 activityHasMore = next.length >= 25;
+            } else if (activityTab === 'collections') {
+                if (!api.collection?.getUserCollections) {
+                    activityItems = [];
+                    activityHasMore = false;
+                    activitySupportsPaging = false;
+                } else {
+                    const data = await api.collection.getUserCollections(id, activityPage);
+                    const next = data.content || [];
+                    activityItems = reset ? next : [...activityItems, ...next];
+                    activityHasMore = next.length >= 25;
+                }
             }
         } catch (e) {
             console.error('Error loading activity:', e);
@@ -367,8 +378,8 @@
                         {#if profile.badge?.name || profile.badge?.title}
                             <span class="profile-badge">{profile.badge.name || profile.badge.title}</span>
                         {/if}
-                        {#if (profile.level ?? profile.privilege_level) !== undefined}
-                            <span class="profile-level">{profile.level ?? profile.privilege_level}</span>
+                        {#if profile.rating_score !== undefined && profile.rating_score !== null}
+                            <span class="profile-level">{profile.rating_score}</span>
                         {/if}
                     </div>
 
@@ -676,14 +687,17 @@
                     <h2>Активность</h2>
                     {#if activityTab === 'history'}
                         <a href="/profile/{profileId}/history" class="view-all">Посмотреть всё</a>
-                    {:else}
+                    {:else if activityTab === 'votes'}
                         <a href="/profile/{profileId}/votes" class="view-all">Посмотреть всё</a>
+                    {:else}
+                        <a href="/profile/{profileId}/collections" class="view-all">Посмотреть всё</a>
                     {/if}
                 </div>
 
                 <div class="activity-tabs">
                     <button type="button" class="activity-tab" class:active={activityTab === 'history'} on:click={() => setActivityTab('history')}>История</button>
                     <button type="button" class="activity-tab" class:active={activityTab === 'votes'} on:click={() => setActivityTab('votes')}>Оценки</button>
+                    <button type="button" class="activity-tab" class:active={activityTab === 'collections'} on:click={() => setActivityTab('collections')}>Коллекции</button>
                 </div>
 
                 {#if activityItems.length === 0 && activityLoading}
@@ -709,7 +723,7 @@
                                         </div>
                                     </div>
                                 </a>
-                            {:else}
+                            {:else if activityTab === 'votes'}
                                 <a href="/release/{item.release?.id || item.id}" class="activity-item">
                                     <img src={item.release?.image || item.image} alt="" class="activity-poster" loading="lazy" />
                                     <div class="activity-meta">
@@ -719,6 +733,17 @@
                                             {#if d}
                                                 <span>{d.toLocaleDateString('ru-RU')}</span>
                                             {/if}
+                                        </div>
+                                    </div>
+                                </a>
+                            {:else}
+                                <a href="/collection/{item.id}" class="activity-item">
+                                    <img src={item.image} alt="" class="activity-poster" loading="lazy" />
+                                    <div class="activity-meta">
+                                        <div class="activity-title">{item.title}</div>
+                                        <div class="activity-sub">
+                                            <span>В избранном {item.favorites_count || 0}</span>
+                                            <span>Комментарии {item.comment_count || 0}</span>
                                         </div>
                                     </div>
                                 </a>
@@ -746,17 +771,18 @@
     .profile-content {
         max-width: 900px;
         margin: 0 auto;
-        padding: 0 20px 20px;
+        padding: 16px 20px 20px;
     }
 
     /* Cover banner */
     .profile-cover {
         height: 200px;
-        border-radius: 0 0 16px 16px;
+        border-radius: 16px;
         overflow: hidden;
         margin-bottom: -60px;
         position: relative;
         z-index: 0;
+        pointer-events: none;
     }
 
     .profile-cover-img {
@@ -773,7 +799,7 @@
         margin-bottom: 30px;
         padding: 0 20px;
         position: relative;
-        z-index: 1;
+        z-index: 2;
     }
 
     .profile-avatar-wrapper {
@@ -836,7 +862,7 @@
 
     .profile-name-row {
         display: flex;
-        align-items: center;
+        align-items: baseline;
         gap: 10px;
         flex-wrap: wrap;
     }
@@ -846,6 +872,7 @@
         font-weight: bold;
         margin: 0;
         color: var(--text-color);
+        line-height: 1.1;
     }
 
     .profile-badge {
@@ -855,15 +882,18 @@
         border-radius: 12px;
         font-size: 12px;
         font-weight: 600;
+        line-height: 1;
     }
 
     .profile-level {
         padding: 4px 10px;
-        background: var(--alt-background-color);
-        color: var(--text-color);
+        background: rgba(43, 182, 115, 0.18);
+        color: #2bb673;
+        border: 1px solid rgba(43, 182, 115, 0.35);
         border-radius: 12px;
         font-size: 12px;
         font-weight: 600;
+        line-height: 1;
     }
 
     .profile-status-row {
@@ -875,6 +905,7 @@
     .profile-status {
         font-size: 14px;
         color: var(--secondary-text-color);
+        line-height: 1.3;
     }
 
     .profile-status.online {
@@ -884,7 +915,7 @@
     .profile-desc {
         font-size: 13px;
         color: var(--secondary-text-color);
-        line-height: 1.4;
+        line-height: 1.45;
         max-width: 520px;
     }
 
@@ -1440,6 +1471,7 @@
         font-size: 13px;
         font-weight: 700;
         color: var(--text-color);
+        line-height: 1.25;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -1451,6 +1483,7 @@
         font-size: 12px;
         color: var(--secondary-text-color);
         flex-wrap: wrap;
+        line-height: 1.2;
     }
 
     .activity-loading,
