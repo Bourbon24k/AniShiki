@@ -11,7 +11,7 @@
 	let isMobile = false;
 
 	if (browser) {
-		const endpointUrl = localStorage.getItem('endpointUrl') || 'api-s.anixsekai.com';
+		const endpointUrl = JSON.parse(localStorage.getItem('endpointUrl') || '"api.anixart.app"');
 		const token = localStorage.getItem('user_token');
 		const userToken = token ? JSON.parse(token) : null;
 

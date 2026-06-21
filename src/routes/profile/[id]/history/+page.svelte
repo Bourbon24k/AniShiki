@@ -72,7 +72,7 @@
     }
 
     async function loadMore() {
-        if (!api || isLoadingMore || !hasMore || !supportsPaging) return;
+        if (!api || !api.profile.getHistory || isLoadingMore || !hasMore || !supportsPaging) return;
         const id = Number(profileId);
         if (!Number.isFinite(id)) return;
 

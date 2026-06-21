@@ -84,35 +84,35 @@
         {#if discoverData.interesting.length > 0}
             <section class="carousel-section">
                 <div class="carousel">
-                    <button class="carousel-btn prev" on:click={prevSlide} aria-label="Предыдущий">
-                        <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-                            <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
-                        </svg>
+                    {#each discoverData.interesting as item, i}
+                        <a
+                            href="/release/{item.action || item.release?.id || item.id}"
+                            class="carousel-slide"
+                            class:active={i === carouselIndex}
+                        >
+                            <img src={item.image || item.release?.image} alt={item.title || item.release?.title_ru} class="carousel-img" referrerpolicy="no-referrer" />
+                            <div class="carousel-shade"></div>
+                            <div class="carousel-info">
+                                <span class="carousel-tag">Интересное</span>
+                                <h3>{item.title || item.release?.title_ru}</h3>
+                                {#if item.description}<p>{item.description}</p>{/if}
+                                <span class="carousel-cta">Смотреть →</span>
+                            </div>
+                        </a>
+                    {/each}
+
+                    <button class="carousel-btn prev" on:click|preventDefault={prevSlide} aria-label="Предыдущий">
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
                     </button>
-                    <div class="carousel-track">
-                        {#each discoverData.interesting as item, i}
-                            <a 
-                                href="/release/{item.action || item.release?.id || item.id}" 
-                                class="carousel-slide" 
-                                class:active={i === carouselIndex}
-                                class:prev={i === (carouselIndex - 1 + discoverData.interesting.length) % discoverData.interesting.length}
-                                class:next={i === (carouselIndex + 1) % discoverData.interesting.length}
-                            >
-                                <img src={item.image || item.release?.image} alt={item.title || item.release?.title_ru} class="carousel-img" referrerpolicy="no-referrer" />
-                                <div class="carousel-info">
-                                    <h3>{item.title || item.release?.title_ru}</h3>
-                                    {#if item.description}
-                                        <p>{item.description}</p>
-                                    {/if}
-                                </div>
-                            </a>
+                    <button class="carousel-btn next" on:click|preventDefault={nextSlide} aria-label="Следующий">
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                    </button>
+
+                    <div class="carousel-dots">
+                        {#each discoverData.interesting as _, i}
+                            <button class="dot" class:active={i === carouselIndex} on:click={() => carouselIndex = i} aria-label="Слайд {i+1}"></button>
                         {/each}
                     </div>
-                    <button class="carousel-btn next" on:click={nextSlide} aria-label="Следующий">
-                        <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-                            <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
-                        </svg>
-                    </button>
                 </div>
             </section>
         {/if}
@@ -280,44 +280,31 @@
         justify-content: center;
         gap: 10px;
         padding: 14px;
-        border-radius: 14px;
-        color: white;
+        border-radius: var(--radius-md);
+        color: var(--text-color);
+        background: var(--surface-2);
+        border: 1px solid var(--border-color);
         text-decoration: none;
-        transition: filter 0.2s;
-        font-weight: 600;
+        transition: background var(--dur) var(--ease), transform var(--dur-fast) var(--ease), border-color var(--dur) var(--ease);
+        font-weight: 700;
     }
+
+    .action-btn :global(svg) { color: var(--accent-strong); }
 
     .action-btn:hover {
-        filter: brightness(1.1);
-    }
-
-    .action-btn--popular {
-        background: #d6a000;
-    }
-
-    .action-btn--schedule {
-        background: #2f6bff;
-    }
-
-    .action-btn--collections {
-        background: #7b3ff2;
-    }
-
-    .action-btn--filter {
-        background: #2bb673;
-    }
-
-    .action-btn--random {
-        background: #cc2e56;
+        background: var(--surface-hover);
+        border-color: var(--border-strong);
+        transform: translateY(-2px);
     }
 
     .carousel {
         position: relative;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 12px;
         width: 100%;
+        height: 380px;
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        background: var(--surface-2);
+        box-shadow: var(--shadow-md);
     }
 
     @media (max-width: 768px) {
@@ -402,89 +389,125 @@
     }
 
     /* Carousel */
-    .carousel-btn {
-        justify-content: center;
-        transition: all 0.2s;
-        z-index: 5;
-    }
-
-    .carousel-btn:hover {
-        background: var(--primary-color);
-        color: white;
-    }
-
-    .carousel-track {
-        position: relative;
-        display: flex;
-        gap: 20px;
-        justify-content: center;
-        flex: 1;
-        overflow: hidden;
-        height: 320px;
-    }
-
     .carousel-slide {
         position: absolute;
-        width: 45%;
-        height: 300px;
-        border-radius: 16px;
-        overflow: hidden;
+        inset: 0;
         text-decoration: none;
         opacity: 0;
-        transform: scale(0.8);
-        transition: all 0.5s ease;
-        pointer-events: none;
+        visibility: hidden;
+        transition: opacity var(--dur-slow) var(--ease);
     }
 
     .carousel-slide.active {
-        position: relative;
         opacity: 1;
-        transform: scale(1);
-        z-index: 3;
-        pointer-events: auto;
-    }
-
-    .carousel-slide.prev,
-    .carousel-slide.next {
-        position: relative;
-        opacity: 0.6;
-        transform: scale(0.85);
+        visibility: visible;
         z-index: 1;
-        pointer-events: auto;
     }
 
     .carousel-img {
         width: 100%;
         height: 100%;
         object-fit: cover;
+        object-position: center 25%;
+    }
+
+    .carousel-shade {
+        position: absolute;
+        inset: 0;
+        background: var(--hero-grad), var(--overlay-grad);
     }
 
     .carousel-info {
         position: absolute;
         bottom: 0;
         left: 0;
-        right: 0;
-        padding: 20px;
-        background: linear-gradient(transparent, rgba(0,0,0,0.9));
-        color: white;
+        max-width: 620px;
+        padding: 28px 32px;
+        color: #fff;
+    }
+
+    .carousel-tag {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--accent-strong);
+        margin-bottom: 8px;
     }
 
     .carousel-info h3 {
-        font-size: 18px;
-        font-weight: 600;
-        margin: 0 0 6px;
+        font-size: clamp(22px, 3.5vw, 34px);
+        font-weight: 900;
+        letter-spacing: -0.02em;
+        margin: 0 0 8px;
+        text-shadow: 0 2px 12px rgba(0,0,0,0.5);
     }
 
     .carousel-info p {
-        font-size: 13px;
-        margin: 0;
-        opacity: 0.8;
+        font-size: 14px;
+        margin: 0 0 14px;
+        opacity: 0.85;
         display: -webkit-box;
         -webkit-line-clamp: 2;
-        line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
     }
+
+    .carousel-cta {
+        display: inline-block;
+        padding: 9px 18px;
+        border-radius: var(--radius-pill);
+        background: var(--accent-gradient);
+        font-weight: 700;
+        font-size: 14px;
+        box-shadow: var(--shadow-accent);
+    }
+
+    .carousel-btn {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        border: 1px solid var(--glass-border);
+        background: var(--glass-bg);
+        -webkit-backdrop-filter: blur(10px);
+        backdrop-filter: blur(10px);
+        color: #fff;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 3;
+        transition: background var(--dur) var(--ease);
+    }
+
+    .carousel-btn:hover { background: var(--accent); }
+    .carousel-btn.prev { left: 16px; }
+    .carousel-btn.next { right: 16px; }
+
+    .carousel-dots {
+        position: absolute;
+        bottom: 16px;
+        right: 24px;
+        display: flex;
+        gap: 7px;
+        z-index: 3;
+    }
+
+    .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        border: none;
+        background: rgba(255,255,255,0.4);
+        cursor: pointer;
+        transition: all var(--dur) var(--ease);
+    }
+
+    .dot.active { background: #fff; width: 22px; border-radius: 4px; }
 
     /* Watching grid */
     .watching-grid {
@@ -693,17 +716,8 @@
             grid-template-columns: repeat(2, 1fr);
         }
 
-        .carousel-track {
-            height: 260px;
-        }
-
-        .carousel-slide.active {
-            width: 60%;
-        }
-
-        .carousel-slide.prev,
-        .carousel-slide.next {
-            width: 30%;
+        .carousel {
+            height: 300px;
         }
     }
 
@@ -746,18 +760,12 @@
             gap: 12px;
         }
 
-        .carousel-track {
-            height: 200px;
+        .carousel {
+            height: 240px;
         }
 
-        .carousel-slide.active {
-            width: 80%;
-        }
-
-        .carousel-slide.prev,
-        .carousel-slide.next {
-            display: none;
-        }
+        .carousel-info { padding: 18px 18px 22px; }
+        .carousel-info p { display: none; }
 
         .carousel-btn {
             width: 36px;

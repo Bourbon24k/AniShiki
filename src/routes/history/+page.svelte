@@ -211,8 +211,8 @@
         }
 
         .history-grid {
-            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-            gap: 12px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px 12px;
         }
     }
 </style>

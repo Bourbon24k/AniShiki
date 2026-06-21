@@ -514,12 +514,14 @@
             <a href="/" class="back-btn">Вернуться на главную</a>
         </div>
     {:else if release}
+        {#if release.image}
+            <div class="release-backdrop" style="background-image: url('{release.image}')"></div>
+        {/if}
         <div class="release-top-actions">
-            <button class="release-back" on:click={goBack}>
+            <button class="release-back" on:click={goBack} aria-label="Назад">
                 <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
                     <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
                 </svg>
-                Назад
             </button>
         </div>
         <div class="release-content">
@@ -996,11 +998,31 @@
         width: 100%;
         min-height: 100%;
         padding: 20px;
+        position: relative;
+    }
+
+    .release-backdrop {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 560px;
+        background-size: cover;
+        background-position: center 20%;
+        filter: blur(40px) saturate(1.3);
+        transform: scale(1.2);
+        opacity: 0.3;
+        z-index: 0;
+        pointer-events: none;
+        -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0,0,0,0.6) 55%, transparent 100%);
+        mask-image: linear-gradient(180deg, #000 0%, rgba(0,0,0,0.6) 55%, transparent 100%);
     }
 
     .release-top-actions {
+        position: relative;
+        z-index: 1;
         max-width: 1400px;
-        margin: 0 auto 12px;
+        margin: 0 auto 16px;
         display: flex;
         align-items: center;
         justify-content: flex-start;
@@ -1009,18 +1031,23 @@
     .release-back {
         display: inline-flex;
         align-items: center;
-        gap: 10px;
-        padding: 10px 14px;
-        border: none;
-        border-radius: 10px;
-        background: var(--alt-background-color);
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        border: 1px solid var(--border-color);
+        border-radius: 50%;
+        background: var(--glass-bg);
+        -webkit-backdrop-filter: blur(12px);
+        backdrop-filter: blur(12px);
         color: var(--text-color);
-        font-weight: 600;
         cursor: pointer;
+        transition: background var(--dur) var(--ease), transform var(--dur-fast) var(--ease);
     }
 
     .release-back:hover {
-        filter: brightness(1.1);
+        background: var(--surface-hover);
+        transform: translateY(-1px);
     }
 
     .franchise-link {
@@ -1041,6 +1068,8 @@
     }
 
     .release-content {
+        position: relative;
+        z-index: 1;
         display: flex;
         gap: 30px;
         max-width: 1400px;
@@ -1184,9 +1213,10 @@
 
     .poster-wrapper {
         position: relative;
-        border-radius: 12px;
+        border-radius: var(--radius-md);
         overflow: hidden;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+        box-shadow: var(--shadow-lg);
+        border: 1px solid var(--border-color);
     }
 
     .poster {
@@ -2134,11 +2164,6 @@
 
         .release-top-actions {
             margin-bottom: 8px;
-        }
-
-        .release-back {
-            width: 100%;
-            justify-content: center;
         }
 
         .section-header {

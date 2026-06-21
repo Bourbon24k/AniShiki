@@ -146,8 +146,9 @@
     }
 
     .settings-section {
-        background-color: var(--alt-background-color);
-        border-radius: 12px;
+        background-color: var(--surface-2);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
         padding: 20px;
         margin-bottom: 20px;
     }
@@ -190,15 +191,17 @@
     }
 
     .setting-select {
-        padding: 10px 14px;
+        padding: 10px 16px;
         font-size: 14px;
-        border: none;
-        border-radius: 8px;
-        background-color: var(--background-color);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-pill);
+        background-color: var(--surface-3);
         color: var(--text-color);
         cursor: pointer;
-        min-width: 180px;
+        min-width: 200px;
     }
+
+    .setting-select:focus { outline: none; border-color: var(--accent); }
 
     .account-info {
         display: flex;

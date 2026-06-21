@@ -4,7 +4,15 @@ import { browser } from '$app/environment';
 // Helper function to create localStorage-backed store
 function createLocalStorageStore(key, defaultValue) {
     const storedValue = browser ? localStorage.getItem(key) : null;
-    const initial = storedValue ? JSON.parse(storedValue) : defaultValue;
+    let initial = storedValue ? JSON.parse(storedValue) : defaultValue;
+
+    if (key === 'guiSettings' && (!initial?.theme || initial.theme === 'dark')) {
+        initial = { ...initial, theme: 'amoled' };
+    }
+
+    if (key === 'endpointUrl' && (!initial || initial === 'api-s.anixsekai.com')) {
+        initial = 'api.anixart.app';
+    }
     
     const store = writable(initial);
     
@@ -22,12 +30,12 @@ export const userToken = createLocalStorageStore('user_token', null);
 
 // GUI settings store
 export const guiSettings = createLocalStorageStore('guiSettings', {
-    theme: 'dark',
+    theme: 'amoled',
     releaseCardType: 'full-row'
 });
 
 // Endpoint URL store
-export const endpointUrl = createLocalStorageStore('endpointUrl', 'api-s.anixsekai.com');
+export const endpointUrl = createLocalStorageStore('endpointUrl', 'api.anixart.app');
 
 // Player settings store
 export const playerSettings = createLocalStorageStore('playerSettings', {
@@ -92,3 +100,6 @@ export const profileInfo = writable(null);
 
 // API instance store
 export const anixApiStore = writable(null);
+
+// PWA install prompt (deferred beforeinstallprompt event)
+export const installPrompt = writable(null);

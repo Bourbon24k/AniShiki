@@ -1,24 +1,30 @@
 {
-  "name": "AniShika",
-  "short_name": "AniShika",
+  "name": "AniShiki",
+  "short_name": "AniShiki",
   "description": "Неофициальный веб-клиент Anixart",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1a1a2e",
-  "theme_color": "#7c3aed",
+  "background_color": "#0c0c0f",
+  "theme_color": "#0c0c0f",
   "orientation": "portrait-primary",
   "icons": [
     {
       "src": "/favicon.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/favicon.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "categories": ["entertainment"],

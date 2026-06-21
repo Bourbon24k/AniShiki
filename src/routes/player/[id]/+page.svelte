@@ -635,28 +635,31 @@
     .top-back-btn {
         display: inline-flex;
         align-items: center;
-        gap: 10px;
-        padding: 10px 14px;
-        border: none;
-        border-radius: 10px;
-        background: var(--alt-background-color);
-        color: var(--text-color);
-        font-weight: 600;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        border: 1px solid rgba(255,255,255,0.18);
+        border-radius: 50%;
+        background: rgba(0,0,0,0.4);
+        -webkit-backdrop-filter: blur(10px);
+        backdrop-filter: blur(10px);
+        color: #fff;
         cursor: pointer;
+        transition: background 0.2s, transform 0.1s;
     }
 
     .top-back-btn:hover {
-        background: rgba(0,0,0,0.8);
+        background: rgba(0,0,0,0.65);
     }
 
     .top-back-btn:active {
-        background: rgba(0,0,0,0.9);
-        transform: scale(0.95);
+        transform: scale(0.92);
     }
 
     .top-back-btn svg {
-        width: 24px;
-        height: 24px;
+        width: 22px;
+        height: 22px;
     }
 
     .title-info {

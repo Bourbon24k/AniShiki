@@ -1,51 +1,52 @@
 <script>
-    import { mobileMenuOpen } from '$lib/stores';
-    import { page } from '$app/stores';
-    import { goto } from '$app/navigation';
-    
+    import { mobileMenuOpen, guiSettings } from '$lib/stores';
+
     export let showBack = false;
-    export let title = 'AniShika';
-    
+    export let title = 'AniShiki';
+
     function toggleMobileMenu() {
         mobileMenuOpen.update(v => !v);
     }
-    
+
     function goBack() {
         history.back();
     }
+
+    function toggleTheme() {
+        guiSettings.update(s => ({ ...s, theme: s.theme === 'light' ? 'amoled' : 'light' }));
+    }
+
+    $: theme = $guiSettings?.theme || 'dark';
 </script>
 
-<header class="header">
+<header class="header glass">
     <div class="header-left">
-        <!-- Mobile menu button -->
-        <button class="menu-toggle" on:click={toggleMobileMenu} aria-label="Открыть меню">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
-            </svg>
-        </button>
-        
-        <!-- Back button -->
         {#if showBack}
-            <button class="back-btn" on:click={goBack} aria-label="Назад">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-                </svg>
+            <button class="icon-btn" on:click={goBack} aria-label="Назад">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+            </button>
+        {:else}
+            <button class="icon-btn" on:click={toggleMobileMenu} aria-label="Меню">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
             </button>
         {/if}
     </div>
-    
-    <div class="header-center">
-        <a href="/" class="logo">
-            <span class="logo-text">{title}</span>
-            <sup class="beta-badge">β</sup>
-        </a>
-    </div>
-    
+
+    <a href="/" class="logo">
+        <img class="logo-mark" src="/favicon.png" alt="AniShiki" />
+        <span class="logo-text">{title}</span>
+    </a>
+
     <div class="header-right">
-        <a href="/search" class="search-btn" aria-label="Поиск">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
-            </svg>
+        <button class="icon-btn" on:click={toggleTheme} aria-label="Сменить тему">
+            {#if theme === 'dark'}
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 0 0-1.41 0 .996.996 0 0 0 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37a.996.996 0 0 0-1.41 0 .996.996 0 0 0 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0a.996.996 0 0 0 0-1.41l-1.06-1.06zm1.06-10.96a.996.996 0 0 0 0-1.41.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36a.996.996 0 0 0 0-1.41.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/></svg>
+            {:else}
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>
+            {/if}
+        </button>
+        <a href="/search" class="icon-btn" aria-label="Поиск">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
         </a>
     </div>
 </header>
@@ -55,34 +56,25 @@
         display: none;
         position: sticky;
         top: 0;
-        left: 0;
-        right: 0;
-        height: calc(56px + env(safe-area-inset-top, 0));
-        background-color: var(--alt-background-color);
         z-index: 50;
-        padding: 0 16px;
-        padding-top: env(safe-area-inset-top, 0);
+        height: calc(58px + env(safe-area-inset-top, 0));
+        padding: env(safe-area-inset-top, 0) 12px 0;
         align-items: center;
-        justify-content: space-between;
+        grid-template-columns: 88px 1fr 88px;
+        border-bottom: 1px solid var(--glass-border);
     }
-    
+
     .header-left,
     .header-right {
         display: flex;
         align-items: center;
-        gap: 8px;
-        min-width: 48px;
+        gap: 4px;
+        min-width: 0;
     }
-    
-    .header-center {
-        flex: 1;
-        display: flex;
-        justify-content: center;
-    }
-    
-    .menu-toggle,
-    .back-btn,
-    .search-btn {
+
+    .header-right { justify-content: flex-end; }
+
+    .icon-btn {
         display: flex;
         align-items: center;
         justify-content: center;
@@ -93,43 +85,38 @@
         border: none;
         color: var(--text-color);
         cursor: pointer;
-        transition: background-color 0.2s;
+        text-decoration: none;
+        transition: background var(--dur) var(--ease);
     }
-    
-    .menu-toggle:hover,
-    .back-btn:hover,
-    .search-btn:hover {
-        background-color: var(--background-color);
-    }
-    
-    .menu-toggle svg,
-    .back-btn svg,
-    .search-btn svg {
-        width: 24px;
-        height: 24px;
-    }
-    
+
+    .icon-btn:hover { background: var(--surface-hover); }
+    .icon-btn svg { width: 23px; height: 23px; }
+
     .logo {
         display: flex;
         align-items: center;
+        justify-content: center;
+        gap: 8px;
         text-decoration: none;
         color: var(--text-color);
+        min-width: 0;
     }
-    
+
+    .logo-mark {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        object-fit: cover;
+        display: block;
+    }
+
     .logo-text {
-        font-size: 20px;
-        font-weight: bold;
+        font-size: 18px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
     }
-    
-    .beta-badge {
-        font-size: 10px;
-        color: var(--primary-color);
-        margin-left: 2px;
-    }
-    
+
     @media (max-width: 768px) {
-        .header {
-            display: flex;
-        }
+        .header { display: grid; }
     }
 </style>

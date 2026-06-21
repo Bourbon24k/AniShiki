@@ -162,10 +162,12 @@
                 <p>В этой категории пока ничего нет</p>
             </div>
         {:else}
-            {#each allData as anime (anime.id)}
-                <AnimeCard {anime} type="full-row" />
-            {/each}
-            
+            <div class="poster-grid">
+                {#each allData as anime (anime.id)}
+                    <AnimeCard {anime} type="grid" />
+                {/each}
+            </div>
+
             {#if isLoadingMore}
                 <Preloader size="small" />
             {/if}
@@ -178,6 +180,20 @@
         width: 100%;
         height: 100%;
         overflow-y: auto;
+    }
+
+    .poster-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 22px 18px;
+        padding: 0 8px 20px;
+    }
+
+    @media (max-width: 768px) {
+        .poster-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px 12px;
+        }
     }
 
     .bookmarks-header {

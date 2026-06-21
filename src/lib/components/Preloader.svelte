@@ -38,10 +38,10 @@
     .spinner {
         width: 40px;
         height: 40px;
-        border: 3px solid var(--alt-background-color);
-        border-top-color: var(--primary-color);
+        border: 3px solid var(--surface-3);
+        border-top-color: var(--accent);
         border-radius: 50%;
-        animation: spin 1s linear infinite;
+        animation: spin 0.9s linear infinite;
     }
     
     .small .spinner {

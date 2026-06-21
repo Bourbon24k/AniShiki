@@ -23,7 +23,7 @@
 		error = '';
 
 		try {
-			const endpointUrl = localStorage.getItem('endpointUrl') || 'api-s.anixsekai.com';
+			const endpointUrl = JSON.parse(localStorage.getItem('endpointUrl') || '"api.anixart.app"');
 			const anixApi = new Anixart({
 				baseUrl: `https://${endpointUrl}`
 			}).endpoints;

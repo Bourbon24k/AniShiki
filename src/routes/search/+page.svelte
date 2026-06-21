@@ -515,26 +515,6 @@
 
 <div class="search-page">
     <form class="search-form" on:submit={handleSubmit}>
-        <div class="filters-row">
-            <div class="filter-select">
-                <span class="filter-label">Искать в</span>
-                <select class="filter-control" bind:value={where} on:change={onWhereChange}>
-                    {#each availableWhereOptions as opt}
-                        <option value={opt.id}>{opt.label}</option>
-                    {/each}
-                </select>
-            </div>
-            {#if searchByOptions[where]}
-                <div class="filter-select">
-                    <span class="filter-label">Искать по</span>
-                    <select class="filter-control" bind:value={searchBy} on:change={onSearchByChange}>
-                        {#each searchByOptions[where] as opt}
-                            <option value={opt.id}>{opt.label}</option>
-                        {/each}
-                    </select>
-                </div>
-            {/if}
-        </div>
         <div class="search-input-wrapper">
             <svg class="search-icon" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
@@ -552,6 +532,20 @@
                         <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                     </svg>
                 </button>
+            {/if}
+        </div>
+        <div class="filters-row">
+            <select class="filter-control" bind:value={where} on:change={onWhereChange} aria-label="Искать в">
+                {#each availableWhereOptions as opt}
+                    <option value={opt.id}>{opt.label}</option>
+                {/each}
+            </select>
+            {#if searchByOptions[where]}
+                <select class="filter-control" bind:value={searchBy} on:change={onSearchByChange} aria-label="Искать по">
+                    {#each searchByOptions[where] as opt}
+                        <option value={opt.id}>{opt.label}</option>
+                    {/each}
+                </select>
             {/if}
         </div>
     </form>
@@ -661,8 +655,8 @@
                 </div>
             {/if}
 
-            <div class="results-list">
-                {#if where === 'profiles'}
+            {#if where === 'profiles'}
+                <div class="results-list">
                     {#each results as profile (profile.id)}
                         <a class="profile-result" href="/profile/{profile.id}">
                             <img class="profile-avatar" src={profile.avatar} alt={profile.login} referrerpolicy="no-referrer" />
@@ -672,7 +666,9 @@
                             </div>
                         </a>
                     {/each}
-                {:else if where === 'collections'}
+                </div>
+            {:else if where === 'collections'}
+                <div class="results-list">
                     {#each results as c (c.id)}
                         <a class="collection-result" href="/collection/{c.id}">
                             <img class="collection-cover" src={c.image} alt={c.title} referrerpolicy="no-referrer" />
@@ -682,12 +678,14 @@
                             </div>
                         </a>
                     {/each}
-                {:else}
+                </div>
+            {:else}
+                <div class="poster-grid">
                     {#each results as anime (anime.id)}
-                        <AnimeCard {anime} type="full-row" />
+                        <AnimeCard {anime} type="grid" />
                     {/each}
-                {/if}
-            </div>
+                </div>
+            {/if}
             
             {#if hasMore}
                 <div class="load-more-wrapper">
@@ -708,42 +706,45 @@
     .search-page {
         width: 100%;
         min-height: 100%;
-        padding: 20px;
+        padding: 28px;
+    }
+
+    .poster-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 22px 18px;
+    }
+
+    @media (max-width: 768px) {
+        .search-page { padding: 16px; }
+        .poster-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px 12px;
+        }
     }
 
     .filters-row {
         display: flex;
-        gap: 12px;
-        margin-bottom: 12px;
+        gap: 10px;
+        margin-top: 12px;
         flex-wrap: wrap;
     }
 
-    .filter-select {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px 12px;
-        background-color: var(--alt-background-color);
-        border-radius: 12px;
-        flex: 1;
-        min-width: 240px;
-    }
-
-    .filter-label {
+    .filter-control {
+        padding: 8px 14px;
+        background-color: var(--surface-2);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-pill);
         color: var(--secondary-text-color);
         font-size: 13px;
-        white-space: nowrap;
-    }
-
-    .filter-control {
-        width: 100%;
-        border: none;
-        background: transparent;
-        color: var(--text-color);
-        font-size: 14px;
+        font-weight: 600;
         outline: none;
         cursor: pointer;
+        transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease);
     }
+
+    .filter-control:hover { color: var(--text-color); border-color: var(--border-strong); }
+    .filter-control:focus { border-color: var(--accent); }
 
     .search-form {
         max-width: 700px;
@@ -769,16 +770,17 @@
         width: 100%;
         padding: 16px 50px 16px 50px;
         font-size: 16px;
-        border: none;
-        border-radius: 12px;
-        background-color: var(--alt-background-color);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-pill);
+        background-color: var(--surface-2);
         color: var(--text-color);
         outline: none;
-        transition: box-shadow 0.2s;
+        transition: box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
     }
 
     .search-input:focus {
-        box-shadow: 0 0 0 2px var(--primary-color);
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-soft);
     }
 
     .search-input::placeholder {

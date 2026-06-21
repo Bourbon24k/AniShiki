@@ -33,7 +33,7 @@ export const playerDefaultSettings = {
 };
 
 export const guiDefaultSettings = {
-    theme: "dark",
+    theme: "amoled",
     releaseCardType: "full-row",
 };
 
@@ -49,9 +49,8 @@ export const upscaleDefaultSettings = {
 };
 
 export const endpointValues = [
-    { label: "api-s.anixsekai.com", value: "api-s.anixsekai.com" },
     { label: "api.anixart.app", value: "api.anixart.app" },
-    { label: "api.anixart.tv (Заблокирован в РФ)", value: "api.anixart.tv" },
+    { label: "api-s.anixsekai.com", value: "api-s.anixsekai.com" },
 ];
 
 export const bookmarkSortValues = [
@@ -112,7 +111,8 @@ export const collectionSortValues = [
 ];
 
 export const themeValues = [
-    { label: "Темная", value: "dark" },
+    { label: "AMOLED (чёрная)", value: "amoled" },
+    { label: "Тёмная", value: "dark" },
     { label: "Светлая", value: "light" }
 ];
 

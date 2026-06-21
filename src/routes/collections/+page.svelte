@@ -472,5 +472,16 @@
         .collections-grid {
             grid-template-columns: 1fr;
         }
+
+        .collection-card {
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .collection-poster {
+            width: 100%;
+            height: auto;
+            aspect-ratio: 16 / 9;
+        }
     }
 </style>
