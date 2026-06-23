@@ -10,6 +10,7 @@
 	let loading = true;
 	let loadingMore = false;
 	let hasMore = true;
+	let isPrivate = false;
 
 	async function load(reset = true) {
 		if (reset) {
@@ -17,14 +18,21 @@
 			items = [];
 			hasMore = true;
 			loading = true;
+			isPrivate = false;
 		}
 		try {
 			const data = await getApi().profile.getVotedReleases(id, pageNum);
-			const list = (data?.content || []).map((v) => ({ ...(v.release || v), your_vote: v.vote }));
+			// Элемент — это «плоский» релиз; оценка лежит в my_vote.
+			const list = (data?.content || []).map((v) => ({
+				...(v.release || v),
+				your_vote: v.my_vote ?? v.vote ?? 0
+			}));
 			items = reset ? list : [...items, ...list];
 			hasMore = pageNum < (data?.total_page_count ?? 1) - 1;
 		} catch (e) {
-			console.error(e);
+			// Скрытая история оценок → сервер отвечает Bad Request с пустым телом.
+			if (reset && /bad request/i.test(String(e?.message))) isPrivate = true;
+			else console.error(e);
 		}
 		loading = false;
 		loadingMore = false;
@@ -42,7 +50,14 @@
 <div class="page">
 	<a class="back" href={`/profile/${id}`}><Icon name="back" size={18} /> Профиль</a>
 	<h1>Оценки</h1>
-	<div class="list"><GridList {items} {loading} {loadingMore} onMore={more} empty="Нет оценок" /></div>
+	{#if isPrivate}
+		<div class="hidden-note">
+			<Icon name="bookmark" size={32} />
+			<p>История оценок скрыта настройками приватности пользователя.</p>
+		</div>
+	{:else}
+		<div class="list"><GridList {items} {loading} {loadingMore} onMore={more} empty="Нет оценённых релизов" /></div>
+	{/if}
 </div>
 
 <style>
@@ -71,6 +86,19 @@
 		flex: 1;
 		min-height: 0;
 		padding-bottom: 24px;
+	}
+	.hidden-note {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 14px;
+		text-align: center;
+		padding: 70px 20px;
+		color: var(--secondary-text-color);
+	}
+	.hidden-note :global(svg) {
+		color: var(--third-text-color);
+		opacity: 0.7;
 	}
 	@media (max-width: 768px) {
 		.page {
