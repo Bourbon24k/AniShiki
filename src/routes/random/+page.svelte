@@ -1,7 +1,7 @@
 <script>
 	import { onMount } from 'svelte';
 	import { getApi } from '$lib/api';
-	import { returnEpisodeString, getStatusInfo, parseGenres } from '$lib/utils';
+	import { returnEpisodeString, getStatusInfo, parseGenres, thumb } from '$lib/utils';
 	import Icon from '$lib/components/Icon.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 
@@ -36,7 +36,7 @@
 	{:else if release}
 		<a class="card glass" href={`/release/${release.id}`}>
 			<div class="poster">
-				<img src={release.image} alt="" referrerpolicy="no-referrer" />
+				<img src={thumb(release.image, { w: 400 })} alt="" referrerpolicy="no-referrer" decoding="async" />
 			</div>
 			<div class="info">
 				<h2>{release.title_ru}</h2>

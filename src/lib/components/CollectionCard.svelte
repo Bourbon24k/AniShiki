@@ -1,13 +1,14 @@
 <script>
 	import Icon from './Icon.svelte';
+	import { thumb } from '$lib/utils';
 	export let collection;
-	$: cover = collection?.image || collection?.releases?.[0]?.image;
+	$: cover = thumb(collection?.image || collection?.releases?.[0]?.image, { w: 400 });
 </script>
 
 <a class="ccard" href={`/collection/${collection.id}`}>
 	<div class="cover">
 		{#if cover}
-			<img src={cover} alt="" referrerpolicy="no-referrer" loading="lazy" />
+			<img src={cover} alt="" referrerpolicy="no-referrer" loading="lazy" decoding="async" />
 		{:else}
 			<div class="ph"><Icon name="collection" size={32} /></div>
 		{/if}

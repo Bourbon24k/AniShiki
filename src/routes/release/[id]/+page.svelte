@@ -8,7 +8,8 @@
 		getAgeRate,
 		getStatusInfo,
 		parseGenres,
-		returnSoonText
+		returnSoonText,
+		thumb
 	} from '$lib/utils';
 	import Icon from '$lib/components/Icon.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
@@ -157,7 +158,7 @@
 	<div class="release">
 		<div class="backdrop">
 			{#if release.image}
-				<img src={release.image} alt="" referrerpolicy="no-referrer" />
+				<img src={thumb(release.image, { w: 720, q: 50 })} alt="" referrerpolicy="no-referrer" decoding="async" />
 			{/if}
 			<div class="backdrop-grad"></div>
 		</div>
@@ -167,7 +168,7 @@
 
 			<div class="head">
 				<div class="poster">
-					<img src={release.image} alt={release.title_ru} referrerpolicy="no-referrer" />
+					<img src={thumb(release.image, { w: 400 })} alt={release.title_ru} referrerpolicy="no-referrer" decoding="async" fetchpriority="high" />
 					{#if release.status}<span class="status" style="--c:{status.color}">{status.text}</span>{/if}
 				</div>
 
@@ -280,7 +281,7 @@
 					<div class="shots-row no-scrollbar">
 						{#each screenshots as src, i}
 							<button class="shot" on:click={() => openShot(i)}>
-								<img {src} alt={`Кадр ${i + 1}`} referrerpolicy="no-referrer" loading="lazy" />
+								<img src={thumb(src, { w: 480 })} alt={`Кадр ${i + 1}`} referrerpolicy="no-referrer" loading="lazy" decoding="async" />
 							</button>
 						{/each}
 					</div>

@@ -1,6 +1,7 @@
 <script>
 	import { page } from '$app/stores';
 	import { getApi } from '$lib/api';
+	import { thumb } from '$lib/utils';
 	import AnimeCard from '$lib/components/AnimeCard.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Icon from '$lib/components/Icon.svelte';
@@ -56,7 +57,7 @@
 
 <div class="page" on:scroll={onScroll}>
 	<div class="hero">
-		{#if franchise?.image}<img class="bg" src={franchise.image} alt="" referrerpolicy="no-referrer" />{/if}
+		{#if franchise?.image}<img class="bg" src={thumb(franchise.image, { w: 720, q: 50 })} alt="" referrerpolicy="no-referrer" decoding="async" />{/if}
 		<div class="grad"></div>
 		<div class="hero-content">
 			<button class="back" on:click={() => history.back()}><Icon name="back" size={18} /> Назад</button>

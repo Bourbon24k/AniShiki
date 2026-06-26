@@ -198,6 +198,26 @@ export function fmtNum(n) {
 	return (n || 0).toLocaleString('ru-RU');
 }
 
+/**
+ * Прокси-ресайзер картинок через images.weserv.nl.
+ * Уменьшает вес обложек в разы (WebP + ресайз под реальный размер карточки)
+ * и отдаёт их с собственного быстрого CDN с кэшем.
+ * @param {string} url исходный URL картинки (CDN Anixart)
+ * @param {{w?: number, h?: number, q?: number}} opts
+ */
+export function thumb(url, opts = {}) {
+	if (!url || typeof url !== 'string') return url;
+	// локальные ассеты и data-URI не трогаем
+	if (url.startsWith('/') || url.startsWith('data:') || url.startsWith('blob:')) return url;
+	const { w = 0, h = 0, q = 80 } = opts;
+	const src = url.replace(/^https?:\/\//, '');
+	let out = `https://images.weserv.nl/?url=${encodeURIComponent(src)}&output=webp&q=${q}&we`;
+	if (w) out += `&w=${w}`;
+	if (h) out += `&h=${h}`;
+	if (w && h) out += '&fit=cover';
+	return out;
+}
+
 /** Список жанров строкой → массив. */
 export function parseGenres(genres, limit = 6) {
 	if (!genres) return [];

@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { getApi } from '$lib/api';
 	import { userToken, showToast } from '$lib/stores';
+	import { thumb } from '$lib/utils';
 	import AnimeCard from '$lib/components/AnimeCard.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import Icon from '$lib/components/Icon.svelte';
@@ -69,14 +70,14 @@
 		<Spinner center label="Загрузка…" />
 	{:else if collection}
 		<div class="hero">
-			{#if collection.image}<img class="bg" src={collection.image} alt="" referrerpolicy="no-referrer" />{/if}
+			{#if collection.image}<img class="bg" src={thumb(collection.image, { w: 720, q: 50 })} alt="" referrerpolicy="no-referrer" decoding="async" />{/if}
 			<div class="hero-grad"></div>
 			<div class="hero-content">
 				<button class="back" on:click={() => history.back()}><Icon name="back" size={18} /> Назад</button>
 				<h1>{collection.title}</h1>
 				<div class="meta">
 					<a href={`/profile/${collection.creator?.id}`} class="creator">
-						{#if collection.creator?.avatar}<img src={collection.creator.avatar} alt="" referrerpolicy="no-referrer" />{/if}
+						{#if collection.creator?.avatar}<img src={thumb(collection.creator.avatar, { w: 64 })} alt="" referrerpolicy="no-referrer" />{/if}
 						{collection.creator?.login || ''}
 					</a>
 					<span>{collection.release_count ?? releases.length} релизов</span>

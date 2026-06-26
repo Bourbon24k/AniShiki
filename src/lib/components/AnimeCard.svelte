@@ -1,5 +1,5 @@
 <script>
-	import { returnEpisodeString, getAgeRate, getStatusInfo, parseGenres } from '$lib/utils';
+	import { returnEpisodeString, getAgeRate, getStatusInfo, parseGenres, thumb } from '$lib/utils';
 	import Icon from './Icon.svelte';
 
 	export let anime;
@@ -7,13 +7,13 @@
 	export let index = null;
 
 	$: status = getStatusInfo(anime?.status);
-	$: poster = anime?.image || anime?.poster;
+	$: poster = thumb(anime?.image || anime?.poster, { w: type === 'full-row' ? 280 : 320 });
 </script>
 
 <a href={`/release/${anime.id}`} class="card {type}" style="--idx:{index}">
 	<div class="poster">
 		{#if poster}
-			<img src={poster} alt={anime.title_ru} loading="lazy" referrerpolicy="no-referrer" />
+			<img src={poster} alt={anime.title_ru} loading="lazy" decoding="async" referrerpolicy="no-referrer" />
 		{:else}
 			<div class="ph"><Icon name="discover" size={40} /></div>
 		{/if}

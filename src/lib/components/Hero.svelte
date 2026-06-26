@@ -1,6 +1,6 @@
 <script>
 	import { onMount, onDestroy } from 'svelte';
-	import { returnEpisodeString, getStatusInfo, parseGenres } from '$lib/utils';
+	import { returnEpisodeString, getStatusInfo, parseGenres, thumb } from '$lib/utils';
 	import Icon from './Icon.svelte';
 
 	export let items = [];
@@ -29,10 +29,12 @@
 			<img
 				class="bg"
 				class:show={i === active}
-				src={it.image || it.poster}
+				src={thumb(it.image || it.poster, { w: 1280 })}
 				alt=""
 				referrerpolicy="no-referrer"
+				decoding="async"
 				loading={i === 0 ? 'eager' : 'lazy'}
+				fetchpriority={i === 0 ? 'high' : 'auto'}
 			/>
 		{/each}
 		<div class="grad"></div>

@@ -4,7 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import { getApi } from '$lib/api';
-	import { releaseTypes } from '$lib/utils';
+	import { releaseTypes, thumb } from '$lib/utils';
 	import GridList from '$lib/components/GridList.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 
@@ -118,7 +118,7 @@
 					{#each franchises as f (f.id)}
 						<a class="fr-card" href={`/franchise/${f.id}`}>
 							<div class="fr-cover">
-								{#if f.image}<img src={f.image} alt="" referrerpolicy="no-referrer" />{/if}
+								{#if f.image}<img src={thumb(f.image, { w: 320 })} alt="" referrerpolicy="no-referrer" loading="lazy" decoding="async" />{/if}
 								<div class="fr-shade"></div>
 							</div>
 							<div class="fr-body">
