@@ -1,5 +1,5 @@
 <script>
-	import { onMount, onDestroy, tick } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { getApi } from '$lib/api';
@@ -30,7 +30,95 @@
 	let panelOpen = true;
 
 	let videoEl;
+	let stageEl;
 	let hls = null;
+
+	// Состояние кастомного плеера
+	let paused = true;
+	let currentTime = 0;
+	let duration = 0;
+	let buffered;
+	let volume = 1;
+	let muted = false;
+	let rate = 1;
+	let buffering = false;
+	let controlsVisible = true;
+	let settingsOpen = false;
+	let isFs = false;
+	let hideTimer;
+	let lastAttached = '';
+	let pendingSeek = 0;
+
+	// Привязываем источник реактивно: как только <video> в DOM и есть URL.
+	$: if (videoEl && videoUrl && mode !== 'iframe' && videoUrl !== lastAttached) {
+		lastAttached = videoUrl;
+		attachDirect(videoUrl);
+	}
+
+	$: bufPct = (() => {
+		if (!buffered || !buffered.length || !duration) return 0;
+		try {
+			return Math.min(100, (buffered.end(buffered.length - 1) / duration) * 100);
+		} catch {
+			return 0;
+		}
+	})();
+	$: progPct = duration ? (currentTime / duration) * 100 : 0;
+	$: if (paused || settingsOpen) controlsVisible = true;
+
+	function fmt(s) {
+		if (!s || !isFinite(s)) return '0:00';
+		s = Math.floor(s);
+		const h = Math.floor(s / 3600);
+		const m = Math.floor((s % 3600) / 60);
+		const sec = s % 60;
+		const mm = h ? String(m).padStart(2, '0') : String(m);
+		return `${h ? h + ':' : ''}${mm}:${String(sec).padStart(2, '0')}`;
+	}
+
+	function togglePlay() {
+		if (!videoEl) return;
+		if (videoEl.paused) videoEl.play();
+		else videoEl.pause();
+		showControlsTemp();
+	}
+	function seekTo(t) {
+		if (videoEl) videoEl.currentTime = t;
+		showControlsTemp();
+	}
+	function skip(sec) {
+		if (videoEl) videoEl.currentTime = Math.max(0, Math.min(duration, videoEl.currentTime + sec));
+		showControlsTemp();
+	}
+	function setVol(v) {
+		if (!videoEl) return;
+		videoEl.volume = v;
+		videoEl.muted = v === 0;
+		showControlsTemp();
+	}
+	function toggleMute() {
+		if (videoEl) videoEl.muted = !videoEl.muted;
+		showControlsTemp();
+	}
+	function setRate(r) {
+		rate = r;
+		if (videoEl) videoEl.playbackRate = r;
+		settingsOpen = false;
+	}
+	async function togglePip() {
+		try {
+			if (document.pictureInPictureElement) await document.exitPictureInPicture();
+			else await videoEl?.requestPictureInPicture?.();
+		} catch {}
+	}
+	function showControlsTemp() {
+		controlsVisible = true;
+		clearTimeout(hideTimer);
+		if (!paused && !settingsOpen) hideTimer = setTimeout(() => (controlsVisible = false), 2800);
+	}
+	function onEnded() {
+		if (canNext) nextEp();
+	}
 
 	function epPos(ep) {
 		const n = parseInt(ep?.name ?? ep?.position, 10);
@@ -130,6 +218,7 @@
 		if (!selectedEpisode) return;
 		loadingVideo = true;
 		videoUrl = '';
+		lastAttached = '';
 		qualities = {};
 		currentQuality = '';
 		extractError = false;
@@ -147,11 +236,9 @@
 					const d = await r.json();
 					if (!d.qualities || !Object.keys(d.qualities).length) throw new Error('empty');
 					qualities = d.qualities;
-					currentQuality = pickQuality(d.default);
+					currentQuality = pickQuality();
 					mode = 'native';
 					videoUrl = qualities[currentQuality];
-					await tick();
-					await attachDirect(videoUrl);
 				} catch (e) {
 					console.warn('kodik extract failed → iframe', e);
 					extractError = true;
@@ -161,8 +248,6 @@
 			} else if (isDirect(u)) {
 				mode = 'video';
 				videoUrl = u;
-				await tick();
-				await attachDirect(u);
 			} else {
 				mode = 'iframe';
 				videoUrl = u;
@@ -173,38 +258,39 @@
 		loadingVideo = false;
 	}
 
-	function pickQuality(def) {
+	function pickQuality() {
 		const keys = Object.keys(qualities);
-		const pref = String($playingSettings?.defaultQuality ?? def ?? '');
+		const pref = String($playingSettings?.defaultQuality ?? '');
 		if (qualities[pref]) return pref;
-		if (def && qualities[String(def)]) return String(def);
-		// иначе максимальное доступное
+		// по умолчанию — максимальное доступное качество
 		return keys.map(Number).filter(Boolean).sort((a, b) => b - a).map(String)[0] || keys[0];
 	}
 
-	async function changeQuality(q) {
+	function changeQuality(q) {
 		if (q === currentQuality || !qualities[q]) return;
-		const t = videoEl?.currentTime || 0;
-		const wasPlaying = videoEl && !videoEl.paused;
+		pendingSeek = videoEl?.currentTime || 0;
 		currentQuality = q;
-		videoUrl = qualities[q];
 		destroyHls();
-		await tick();
-		await attachDirect(videoUrl);
-		if (videoEl) {
-			const restore = () => {
-				try {
-					videoEl.currentTime = t;
-					if (wasPlaying) videoEl.play();
-				} catch {}
-				videoEl.removeEventListener('loadedmetadata', restore);
-			};
-			videoEl.addEventListener('loadedmetadata', restore);
-		}
+		lastAttached = '';
+		videoUrl = qualities[q]; // реактивная привязка переподключит источник
 	}
 
 	async function attachDirect(url) {
 		if (!videoEl) return;
+		videoEl.playbackRate = rate;
+		// восстановление позиции после смены качества
+		if (pendingSeek > 0) {
+			const t = pendingSeek;
+			pendingSeek = 0;
+			const onmeta = () => {
+				try {
+					videoEl.currentTime = t;
+					videoEl.play();
+				} catch {}
+				videoEl.removeEventListener('loadedmetadata', onmeta);
+			};
+			videoEl.addEventListener('loadedmetadata', onmeta);
+		}
 		if (/\.m3u8/i.test(url)) {
 			if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
 				videoEl.src = url;
@@ -239,23 +325,61 @@
 
 	function onKey(e) {
 		if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
-		if (e.code === 'KeyN') nextEp();
-		else if (e.code === 'KeyB') prevEp();
-		else if (e.code === 'KeyF') toggleFs();
+		showControlsTemp();
+		switch (e.code) {
+			case 'Space':
+			case 'KeyK':
+				e.preventDefault();
+				togglePlay();
+				break;
+			case 'ArrowRight':
+				skip(5);
+				break;
+			case 'ArrowLeft':
+				skip(-5);
+				break;
+			case 'ArrowUp':
+				e.preventDefault();
+				setVol(Math.min(1, (videoEl?.volume ?? 1) + 0.1));
+				break;
+			case 'ArrowDown':
+				e.preventDefault();
+				setVol(Math.max(0, (videoEl?.volume ?? 1) - 0.1));
+				break;
+			case 'KeyM':
+				toggleMute();
+				break;
+			case 'KeyF':
+				toggleFs();
+				break;
+			case 'KeyN':
+				nextEp();
+				break;
+			case 'KeyB':
+				prevEp();
+				break;
+		}
 	}
 	function toggleFs() {
-		const el = document.querySelector('.stage');
-		if (!document.fullscreenElement) el?.requestFullscreen?.();
+		if (!document.fullscreenElement) stageEl?.requestFullscreen?.();
 		else document.exitFullscreen?.();
+	}
+	function onFsChange() {
+		isFs = !!document.fullscreenElement;
 	}
 
 	onMount(() => {
 		loadRelease();
 		window.addEventListener('keydown', onKey);
+		document.addEventListener('fullscreenchange', onFsChange);
 	});
 	onDestroy(() => {
 		destroyHls();
-		if (typeof window !== 'undefined') window.removeEventListener('keydown', onKey);
+		clearTimeout(hideTimer);
+		if (typeof window !== 'undefined') {
+			window.removeEventListener('keydown', onKey);
+			document.removeEventListener('fullscreenchange', onFsChange);
+		}
 	});
 </script>
 
@@ -276,13 +400,17 @@
 	</header>
 
 	<div class="layout" class:panel-open={panelOpen}>
-		<div class="stage">
+		<div
+			class="stage"
+			class:idle={!controlsVisible && !paused}
+			bind:this={stageEl}
+			on:pointermove={showControlsTemp}
+			on:pointerleave={() => !paused && !settingsOpen && (controlsVisible = false)}
+		>
 			{#if loading}
 				<Spinner center label="Загрузка плеера…" />
 			{:else if error}
 				<div class="ph"><h2>{error}</h2><a href={`/release/${releaseId}`}>К релизу</a></div>
-			{:else if loadingVideo}
-				<Spinner center label="Загрузка видео…" />
 			{:else if videoUrl}
 				{#if mode === 'iframe'}
 					<iframe
@@ -295,32 +423,136 @@
 					></iframe>
 				{:else}
 					<!-- svelte-ignore a11y-media-has-caption -->
-					<video bind:this={videoEl} class="vid" controls autoplay playsinline></video>
+					<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+					<div class="video-wrap" on:click={togglePlay} on:dblclick={toggleFs}>
+						<video
+							bind:this={videoEl}
+							class="vid"
+							autoplay
+							playsinline
+							bind:paused
+							bind:currentTime
+							bind:duration
+							bind:volume
+							bind:muted
+							bind:buffered
+							on:waiting={() => (buffering = true)}
+							on:playing={() => (buffering = false)}
+							on:canplay={() => (buffering = false)}
+							on:ended={onEnded}
+						></video>
+
+						{#if buffering}
+							<div class="buf"><Spinner size={56} /></div>
+						{:else if paused}
+							<button class="big-play" on:click|stopPropagation={togglePlay} aria-label="Воспроизвести">
+								<Icon name="play" size={38} />
+							</button>
+						{/if}
+
+						<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+						<div class="controls" class:hidden={!controlsVisible} on:click|stopPropagation>
+							<div class="ctop">
+								<span class="ct-title">{release?.title_ru || ''}</span>
+								{#if selectedEpisode}
+									<span class="ct-sub">Эпизод {epPos(selectedEpisode) ?? ''} · {selectedDubber?.name}</span>
+								{/if}
+							</div>
+
+							<div class="cbar">
+								<div
+									class="seek"
+									style="--p:{progPct}%;--b:{bufPct}%"
+									role="slider"
+									tabindex="0"
+									aria-label="Перемотка"
+									aria-valuenow={Math.round(currentTime)}
+								>
+									<input
+										type="range"
+										min="0"
+										max={duration || 0}
+										step="0.1"
+										value={currentTime}
+										on:input={(e) => seekTo(+e.target.value)}
+									/>
+								</div>
+
+								<div class="crow">
+									<button class="cbtn" on:click={togglePlay} aria-label="Пауза/Старт">
+										<Icon name={paused ? 'play' : 'pause'} size={24} />
+									</button>
+									<button class="cbtn" on:click={prevEp} disabled={!canPrev} title="Предыдущая (B)">
+										<Icon name="back" size={20} />
+									</button>
+									<button class="cbtn" on:click={nextEp} disabled={!canNext} title="Следующая (N)">
+										<Icon name="chevronRight" size={22} />
+									</button>
+
+									<div class="vol">
+										<button class="cbtn" on:click={toggleMute} aria-label="Звук">
+											<Icon name={muted || volume === 0 ? 'mute' : 'volume'} size={20} />
+										</button>
+										<input
+											class="vrange"
+											type="range"
+											min="0"
+											max="1"
+											step="0.05"
+											style="--p:{(muted ? 0 : volume) * 100}%"
+											value={muted ? 0 : volume}
+											on:input={(e) => setVol(+e.target.value)}
+										/>
+									</div>
+
+									<span class="time">{fmt(currentTime)} <span class="sep">/</span> {fmt(duration)}</span>
+
+									<span class="spacer"></span>
+
+									<div class="menu-wrap">
+										<button class="cbtn" class:on={settingsOpen} on:click={() => (settingsOpen = !settingsOpen)} aria-label="Настройки">
+											<Icon name="settings" size={20} />
+										</button>
+										{#if settingsOpen}
+											<div class="menu">
+												{#if qualityKeys.length > 1}
+													<div class="msec">
+														<span class="mlabel">Качество</span>
+														<div class="mopts">
+															{#each qualityKeys as q}
+																<button class:active={q === currentQuality} on:click={() => { changeQuality(q); settingsOpen = false; }}>{q}p</button>
+															{/each}
+														</div>
+													</div>
+												{/if}
+												<div class="msec">
+													<span class="mlabel">Скорость</span>
+													<div class="mopts">
+														{#each [0.5, 0.75, 1, 1.25, 1.5, 2] as r}
+															<button class:active={r === rate} on:click={() => setRate(r)}>{r}×</button>
+														{/each}
+													</div>
+												</div>
+											</div>
+										{/if}
+									</div>
+
+									<button class="cbtn pip" on:click={togglePip} title="Картинка в картинке" aria-label="PiP">
+										<Icon name="collection" size={18} />
+									</button>
+									<button class="cbtn" on:click={toggleFs} aria-label="Полный экран">
+										<Icon name="fullscreen" size={20} />
+									</button>
+								</div>
+							</div>
+						</div>
+					</div>
 				{/if}
+			{:else if loadingVideo}
+				<Spinner center label="Загрузка видео…" />
 			{:else}
 				<div class="ph"><h2>Нет доступного видео</h2><p>Выберите озвучку и источник</p></div>
 			{/if}
-
-			<div class="stage-controls">
-				<button on:click={prevEp} disabled={!canPrev}><Icon name="back" size={18} /> Пред.</button>
-				<button on:click={nextEp} disabled={!canNext}>След. <Icon name="chevronRight" size={18} /></button>
-
-				{#if mode === 'native'}
-					<span class="adfree" title="Прямой поток без рекламы">⚡ Без рекламы</span>
-				{:else if mode === 'iframe' && extractError}
-					<span class="adwarn" title="Не удалось извлечь прямой поток, открыт встроенный плеер">Встроенный плеер</span>
-				{/if}
-
-				{#if qualityKeys.length > 1}
-					<div class="quality">
-						{#each qualityKeys as q}
-							<button class:active={q === currentQuality} on:click={() => changeQuality(q)}>{q}p</button>
-						{/each}
-					</div>
-				{/if}
-
-				<button on:click={toggleFs} class="fs"><Icon name="fullscreen" size={18} /></button>
-			</div>
 		</div>
 
 		<aside class="panel" class:open={panelOpen}>
@@ -433,12 +665,24 @@
 		flex-direction: column;
 		background: #000;
 	}
+	.stage.idle {
+		cursor: none;
+	}
+	.video-wrap {
+		position: absolute;
+		inset: 0;
+		display: flex;
+	}
 	.vid {
-		flex: 1;
 		width: 100%;
 		height: 100%;
 		border: none;
 		background: #000;
+		display: block;
+	}
+	iframe.vid {
+		position: absolute;
+		inset: 0;
 	}
 	.ph {
 		flex: 1;
@@ -451,73 +695,279 @@
 	.ph a {
 		color: var(--primary-color);
 	}
-	.stage-controls {
-		display: flex;
-		gap: 10px;
-		padding: 12px 16px;
-		background: var(--alt-background-color);
-		border-top: 1px solid var(--glass-border);
+
+	/* буферизация / большая кнопка */
+	.buf {
+		position: absolute;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		pointer-events: none;
 	}
-	.stage-controls button {
-		display: inline-flex;
+	.big-play {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		width: 84px;
+		height: 84px;
+		border-radius: 50%;
+		border: none;
+		display: grid;
+		place-items: center;
+		padding-left: 5px;
+		color: #fff;
+		background: rgba(20, 20, 24, 0.55);
+		backdrop-filter: blur(8px);
+		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+		cursor: pointer;
+		transition: transform 0.15s ease, background 0.15s ease;
+	}
+	.big-play:hover {
+		transform: translate(-50%, -50%) scale(1.07);
+		background: var(--primary-color);
+	}
+
+	/* оверлей контролов */
+	.controls {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
+		opacity: 1;
+		transition: opacity 0.25s ease;
+		pointer-events: none;
+	}
+	.controls > * {
+		pointer-events: auto;
+	}
+	.controls.hidden {
+		opacity: 0;
+		pointer-events: none;
+	}
+	.ctop {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 16px 20px;
+		background: linear-gradient(to bottom, rgba(0, 0, 0, 0.6), transparent);
+	}
+	.ct-title {
+		font-size: 16px;
+		font-weight: 700;
+		text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+	}
+	.ct-sub {
+		font-size: 12.5px;
+		color: rgba(255, 255, 255, 0.75);
+	}
+	.cbar {
+		padding: 10px 16px 14px;
+		background: linear-gradient(to top, rgba(0, 0, 0, 0.78) 10%, transparent);
+	}
+
+	/* шкала перемотки */
+	.seek {
+		position: relative;
+		height: 18px;
+		display: flex;
+		align-items: center;
+		margin-bottom: 4px;
+		cursor: pointer;
+	}
+	.seek::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		right: 0;
+		height: 4px;
+		border-radius: 4px;
+		background: rgba(255, 255, 255, 0.22);
+	}
+	.seek::after {
+		content: '';
+		position: absolute;
+		left: 0;
+		width: var(--b, 0%);
+		height: 4px;
+		border-radius: 4px;
+		background: rgba(255, 255, 255, 0.4);
+	}
+	.seek input {
+		position: relative;
+		z-index: 2;
+		width: 100%;
+		height: 18px;
+		margin: 0;
+		background: transparent;
+		-webkit-appearance: none;
+		appearance: none;
+		cursor: pointer;
+	}
+	.seek input::-webkit-slider-runnable-track {
+		height: 4px;
+		border-radius: 4px;
+		background: linear-gradient(
+			to right,
+			var(--primary-color) var(--p, 0%),
+			transparent var(--p, 0%)
+		);
+	}
+	.seek input::-moz-range-progress {
+		height: 4px;
+		border-radius: 4px;
+		background: var(--primary-color);
+	}
+	.seek input::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		width: 14px;
+		height: 14px;
+		margin-top: -5px;
+		border-radius: 50%;
+		background: var(--primary-color);
+		box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.12);
+		transition: transform 0.12s ease;
+	}
+	.seek input::-moz-range-thumb {
+		width: 14px;
+		height: 14px;
+		border: none;
+		border-radius: 50%;
+		background: var(--primary-color);
+	}
+	.seek:hover input::-webkit-slider-thumb {
+		transform: scale(1.25);
+	}
+
+	.crow {
+		display: flex;
 		align-items: center;
 		gap: 6px;
-		padding: 9px 16px;
-		border: 1px solid var(--glass-border);
-		background: var(--elevated-color);
-		color: var(--text-color);
-		border-radius: 10px;
-		cursor: pointer;
-		font-size: 13px;
-		font-weight: 600;
 	}
-	.stage-controls button:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-	.stage-controls .fs {
-		margin-left: auto;
-	}
-	.adfree,
-	.adwarn {
-		display: inline-flex;
-		align-items: center;
-		padding: 7px 12px;
-		border-radius: 9px;
-		font-size: 12px;
-		font-weight: 700;
-	}
-	.adfree {
-		color: #4ade80;
-		background: rgba(74, 222, 128, 0.12);
-		border: 1px solid rgba(74, 222, 128, 0.3);
-	}
-	.adwarn {
-		color: var(--secondary-text-color);
-		background: var(--elevated-color);
-		border: 1px solid var(--glass-border);
-	}
-	.quality {
-		display: inline-flex;
-		gap: 4px;
-		padding: 3px;
-		background: var(--elevated-color);
-		border: 1px solid var(--glass-border);
-		border-radius: 10px;
-	}
-	.quality button {
-		padding: 5px 11px;
+	.cbtn {
+		width: 38px;
+		height: 38px;
+		display: grid;
+		place-items: center;
 		border: none;
 		background: transparent;
-		color: var(--secondary-text-color);
-		border-radius: 7px;
-		cursor: pointer;
-		font-size: 12px;
-		font-weight: 700;
-	}
-	.quality button.active {
-		background: var(--primary-color);
 		color: #fff;
+		border-radius: 10px;
+		cursor: pointer;
+		transition: background 0.15s ease, opacity 0.15s ease;
+	}
+	.cbtn:hover {
+		background: rgba(255, 255, 255, 0.14);
+	}
+	.cbtn.on {
+		color: var(--primary-color);
+	}
+	.cbtn:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
+	.spacer {
+		flex: 1;
+	}
+	.time {
+		font-size: 13px;
+		font-variant-numeric: tabular-nums;
+		color: #fff;
+		white-space: nowrap;
+		margin: 0 4px;
+	}
+	.time .sep {
+		opacity: 0.5;
+		margin: 0 2px;
+	}
+
+	/* громкость */
+	.vol {
+		display: flex;
+		align-items: center;
+	}
+	.vol .vrange {
+		width: 0;
+		opacity: 0;
+		transition: width 0.2s ease, opacity 0.2s ease;
+		-webkit-appearance: none;
+		appearance: none;
+		height: 4px;
+		border-radius: 4px;
+		background: linear-gradient(
+			to right,
+			#fff var(--p, 100%),
+			rgba(255, 255, 255, 0.3) var(--p, 100%)
+		);
+	}
+	.vol:hover .vrange {
+		width: 70px;
+		opacity: 1;
+		margin: 0 8px 0 2px;
+	}
+	.vrange::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		background: #fff;
+	}
+	.vrange::-moz-range-thumb {
+		width: 12px;
+		height: 12px;
+		border: none;
+		border-radius: 50%;
+		background: #fff;
+	}
+
+	/* меню настроек */
+	.menu-wrap {
+		position: relative;
+	}
+	.menu {
+		position: absolute;
+		bottom: 48px;
+		right: 0;
+		width: 230px;
+		padding: 12px;
+		background: rgba(18, 18, 22, 0.96);
+		backdrop-filter: blur(14px);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 14px;
+		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+	}
+	.msec + .msec {
+		margin-top: 12px;
+		padding-top: 12px;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.mlabel {
+		display: block;
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		color: rgba(255, 255, 255, 0.5);
+		margin-bottom: 8px;
+	}
+	.mopts {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.mopts button {
+		padding: 6px 12px;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		background: rgba(255, 255, 255, 0.05);
+		color: #fff;
+		border-radius: 9px;
+		cursor: pointer;
+		font-size: 12.5px;
+		font-weight: 600;
+	}
+	.mopts button.active {
+		background: var(--primary-color);
+		border-color: transparent;
 	}
 
 	.panel {
