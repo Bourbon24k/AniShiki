@@ -21,6 +21,10 @@
 	let selectedEpisode = null;
 
 	let videoUrl = '';
+	let mode = 'video'; // 'native' (m3u8 из Kodik) | 'video' (прямой mp4/m3u8) | 'iframe' (фолбэк)
+	let qualities = {};
+	let currentQuality = '';
+	let extractError = false;
 	let loadingEpisodes = false;
 	let loadingVideo = false;
 	let panelOpen = true;
@@ -36,7 +40,10 @@
 		if (!u) return false;
 		return /\.(mp4|m3u8)(\?|$)/i.test(u);
 	}
-	$: direct = isDirect(videoUrl);
+	function isKodik(u) {
+		return /kodik|aniqit|anivod/i.test(u || '');
+	}
+	$: qualityKeys = Object.keys(qualities).sort((a, b) => Number(b) - Number(a));
 	$: curIndex = selectedEpisode
 		? episodes.findIndex((e) => e === selectedEpisode || e.url === selectedEpisode.url)
 		: -1;
@@ -123,17 +130,77 @@
 		if (!selectedEpisode) return;
 		loadingVideo = true;
 		videoUrl = '';
+		qualities = {};
+		currentQuality = '';
+		extractError = false;
 		destroyHls();
 		try {
-			let u = selectedEpisode.url;
-			if (u && !u.startsWith('http')) u = `https:${u}`;
-			videoUrl = u || '';
-			await tick();
-			if (direct && videoUrl) await attachDirect(videoUrl);
+			let u = selectedEpisode.url || '';
+			if (u.startsWith('//')) u = `https:${u}`;
+			else if (u && !u.startsWith('http')) u = `https://${u}`;
+
+			if (isKodik(u)) {
+				// Достаём прямой m3u8 через серверный эндпоинт → играем без рекламы.
+				try {
+					const r = await fetch(`/api/kodik?url=${encodeURIComponent(u)}`);
+					if (!r.ok) throw new Error('extract ' + r.status);
+					const d = await r.json();
+					if (!d.qualities || !Object.keys(d.qualities).length) throw new Error('empty');
+					qualities = d.qualities;
+					currentQuality = pickQuality(d.default);
+					mode = 'native';
+					videoUrl = qualities[currentQuality];
+					await tick();
+					await attachDirect(videoUrl);
+				} catch (e) {
+					console.warn('kodik extract failed → iframe', e);
+					extractError = true;
+					mode = 'iframe';
+					videoUrl = u;
+				}
+			} else if (isDirect(u)) {
+				mode = 'video';
+				videoUrl = u;
+				await tick();
+				await attachDirect(u);
+			} else {
+				mode = 'iframe';
+				videoUrl = u;
+			}
 		} catch (e) {
 			console.error('video', e);
 		}
 		loadingVideo = false;
+	}
+
+	function pickQuality(def) {
+		const keys = Object.keys(qualities);
+		const pref = String($playingSettings?.defaultQuality ?? def ?? '');
+		if (qualities[pref]) return pref;
+		if (def && qualities[String(def)]) return String(def);
+		// иначе максимальное доступное
+		return keys.map(Number).filter(Boolean).sort((a, b) => b - a).map(String)[0] || keys[0];
+	}
+
+	async function changeQuality(q) {
+		if (q === currentQuality || !qualities[q]) return;
+		const t = videoEl?.currentTime || 0;
+		const wasPlaying = videoEl && !videoEl.paused;
+		currentQuality = q;
+		videoUrl = qualities[q];
+		destroyHls();
+		await tick();
+		await attachDirect(videoUrl);
+		if (videoEl) {
+			const restore = () => {
+				try {
+					videoEl.currentTime = t;
+					if (wasPlaying) videoEl.play();
+				} catch {}
+				videoEl.removeEventListener('loadedmetadata', restore);
+			};
+			videoEl.addEventListener('loadedmetadata', restore);
+		}
 	}
 
 	async function attachDirect(url) {
@@ -217,9 +284,7 @@
 			{:else if loadingVideo}
 				<Spinner center label="Загрузка видео…" />
 			{:else if videoUrl}
-				{#if direct}
-					<video bind:this={videoEl} class="vid" controls autoplay playsinline></video>
-				{:else}
+				{#if mode === 'iframe'}
 					<iframe
 						src={videoUrl}
 						class="vid"
@@ -228,6 +293,9 @@
 						allowfullscreen
 						referrerpolicy="origin"
 					></iframe>
+				{:else}
+					<!-- svelte-ignore a11y-media-has-caption -->
+					<video bind:this={videoEl} class="vid" controls autoplay playsinline></video>
 				{/if}
 			{:else}
 				<div class="ph"><h2>Нет доступного видео</h2><p>Выберите озвучку и источник</p></div>
@@ -236,6 +304,21 @@
 			<div class="stage-controls">
 				<button on:click={prevEp} disabled={!canPrev}><Icon name="back" size={18} /> Пред.</button>
 				<button on:click={nextEp} disabled={!canNext}>След. <Icon name="chevronRight" size={18} /></button>
+
+				{#if mode === 'native'}
+					<span class="adfree" title="Прямой поток без рекламы">⚡ Без рекламы</span>
+				{:else if mode === 'iframe' && extractError}
+					<span class="adwarn" title="Не удалось извлечь прямой поток, открыт встроенный плеер">Встроенный плеер</span>
+				{/if}
+
+				{#if qualityKeys.length > 1}
+					<div class="quality">
+						{#each qualityKeys as q}
+							<button class:active={q === currentQuality} on:click={() => changeQuality(q)}>{q}p</button>
+						{/each}
+					</div>
+				{/if}
+
 				<button on:click={toggleFs} class="fs"><Icon name="fullscreen" size={18} /></button>
 			</div>
 		</div>
@@ -394,6 +477,47 @@
 	}
 	.stage-controls .fs {
 		margin-left: auto;
+	}
+	.adfree,
+	.adwarn {
+		display: inline-flex;
+		align-items: center;
+		padding: 7px 12px;
+		border-radius: 9px;
+		font-size: 12px;
+		font-weight: 700;
+	}
+	.adfree {
+		color: #4ade80;
+		background: rgba(74, 222, 128, 0.12);
+		border: 1px solid rgba(74, 222, 128, 0.3);
+	}
+	.adwarn {
+		color: var(--secondary-text-color);
+		background: var(--elevated-color);
+		border: 1px solid var(--glass-border);
+	}
+	.quality {
+		display: inline-flex;
+		gap: 4px;
+		padding: 3px;
+		background: var(--elevated-color);
+		border: 1px solid var(--glass-border);
+		border-radius: 10px;
+	}
+	.quality button {
+		padding: 5px 11px;
+		border: none;
+		background: transparent;
+		color: var(--secondary-text-color);
+		border-radius: 7px;
+		cursor: pointer;
+		font-size: 12px;
+		font-weight: 700;
+	}
+	.quality button.active {
+		background: var(--primary-color);
+		color: #fff;
 	}
 
 	.panel {
