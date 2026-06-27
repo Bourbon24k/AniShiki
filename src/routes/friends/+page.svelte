@@ -2,6 +2,17 @@
 	import { onMount } from 'svelte';
 	import { getApi } from '$lib/api';
 	import { userToken, showToast } from '$lib/stores';
+	import { siteSession } from '$lib/stores/auth';
+	import {
+		searchUsers,
+		listFriends,
+		listIncoming,
+		listOutgoing,
+		sendRequest,
+		respondRequest,
+		removeFriend
+	} from '$lib/friends';
+	import Icon from '$lib/components/Icon.svelte';
 	import ProfileGrid from '$lib/components/ProfileGrid.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 
@@ -9,7 +20,84 @@
 	let requests = [];
 	let loading = true;
 
+	// site-аккаунт
+	$: siteOnly = !$userToken && !!$siteSession;
+	let sFriends = [];
+	let sIncoming = [];
+	let sOutgoing = [];
+	let query = '';
+	let results = [];
+	let searching = false;
+	let sLoaded = false;
+
+	$: if (siteOnly && !sLoaded) {
+		sLoaded = true;
+		loadSite();
+	}
+
+	async function loadSite() {
+		loading = true;
+		[sFriends, sIncoming, sOutgoing] = await Promise.all([
+			listFriends(),
+			listIncoming(),
+			listOutgoing()
+		]);
+		loading = false;
+	}
+
+	let searchTimer;
+	function onSearch() {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(async () => {
+			if (!query.trim()) {
+				results = [];
+				return;
+			}
+			searching = true;
+			results = await searchUsers(query);
+			searching = false;
+		}, 350);
+	}
+
+	function relation(id) {
+		if (sFriends.some((f) => f.id === id)) return 'friend';
+		if (sOutgoing.some((f) => f.id === id)) return 'outgoing';
+		if (sIncoming.some((f) => f.id === id)) return 'incoming';
+		return 'none';
+	}
+
+	async function add(p) {
+		try {
+			await sendRequest(p.id);
+			sOutgoing = [...sOutgoing, p];
+			showToast('Заявка отправлена', 'success');
+		} catch {
+			showToast('Ошибка', 'error');
+		}
+	}
+	async function respond(p, ok) {
+		try {
+			await respondRequest(p.id, ok);
+			sIncoming = sIncoming.filter((x) => x.id !== p.id);
+			if (ok) sFriends = [p, ...sFriends];
+			showToast(ok ? 'Заявка принята' : 'Заявка отклонена', 'success');
+		} catch {
+			showToast('Ошибка', 'error');
+		}
+	}
+	async function unfriend(p) {
+		try {
+			await removeFriend(p.id);
+			sFriends = sFriends.filter((x) => x.id !== p.id);
+			sOutgoing = sOutgoing.filter((x) => x.id !== p.id);
+			showToast('Удалено', 'success');
+		} catch {
+			showToast('Ошибка', 'error');
+		}
+	}
+
 	async function load() {
+		if (siteOnly) return; // site грузится через loadSite
 		if (!$userToken) {
 			loading = false;
 			return;
@@ -48,7 +136,81 @@
 	<div class="inner">
 		<h1>Друзья</h1>
 
-		{#if !$userToken}
+		{#if siteOnly}
+			<div class="search">
+				<Icon name="search" size={18} />
+				<input placeholder="Найти пользователя по нику…" bind:value={query} on:input={onSearch} />
+			</div>
+			{#if results.length}
+				<section>
+					<h2>Результаты</h2>
+					<div class="req-list">
+						{#each results as p (p.id)}
+							<div class="req">
+								<div class="req-user">
+									{#if p.avatar_url}<img src={p.avatar_url} alt="" referrerpolicy="no-referrer" />{:else}<span class="ph"><Icon name="user" size={20} /></span>{/if}
+									<span>{p.username}</span>
+								</div>
+								{#if relation(p.id) === 'friend'}
+									<span class="tag">В друзьях</span>
+								{:else if relation(p.id) === 'outgoing'}
+									<span class="tag">Заявка отправлена</span>
+								{:else if relation(p.id) === 'incoming'}
+									<button class="accept" on:click={() => respond(p, true)}>Принять</button>
+								{:else}
+									<button class="accept" on:click={() => add(p)}>Добавить</button>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				</section>
+			{:else if query.trim() && !searching}
+				<p class="muted">Ничего не найдено</p>
+			{/if}
+
+			{#if loading}
+				<Spinner center label="Загрузка…" />
+			{:else}
+				{#if sIncoming.length}
+					<section>
+						<h2>Заявки в друзья <span class="cnt">{sIncoming.length}</span></h2>
+						<div class="req-list">
+							{#each sIncoming as p (p.id)}
+								<div class="req">
+									<div class="req-user">
+										{#if p.avatar_url}<img src={p.avatar_url} alt="" referrerpolicy="no-referrer" />{:else}<span class="ph"><Icon name="user" size={20} /></span>{/if}
+										<span>{p.username}</span>
+									</div>
+									<div class="req-actions">
+										<button class="accept" on:click={() => respond(p, true)}>Принять</button>
+										<button class="decline" on:click={() => respond(p, false)}>Отклонить</button>
+									</div>
+								</div>
+							{/each}
+						</div>
+					</section>
+				{/if}
+
+				<section>
+					<h2>Мои друзья <span class="cnt">{sFriends.length}</span></h2>
+					{#if sFriends.length}
+						<div class="req-list">
+							{#each sFriends as p (p.id)}
+								<div class="req">
+									<div class="req-user">
+										{#if p.avatar_url}<img src={p.avatar_url} alt="" referrerpolicy="no-referrer" />{:else}<span class="ph"><Icon name="user" size={20} /></span>{/if}
+										<span>{p.username}</span>
+									</div>
+									<button class="decline" on:click={() => unfriend(p)}>Удалить</button>
+								</div>
+							{/each}
+						</div>
+					{:else}
+						<p class="muted">Друзей пока нет — найдите кого-нибудь через поиск выше.</p>
+					{/if}
+				</section>
+			{/if}
+		{:else if !$userToken}
 			<div class="auth-needed">
 				<p>Войдите, чтобы видеть друзей</p>
 				<a class="btn" href="/login">Войти</a>
@@ -149,6 +311,59 @@
 		color: #fff;
 		font-weight: 600;
 		cursor: pointer;
+	}
+	.req-actions {
+		display: flex;
+		gap: 8px;
+	}
+	.decline {
+		padding: 9px 16px;
+		border: 1px solid var(--glass-border);
+		border-radius: 10px;
+		background: transparent;
+		color: var(--secondary-text-color);
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.decline:hover {
+		color: var(--dropped-color);
+		border-color: var(--dropped-color);
+	}
+	.tag {
+		font-size: 12.5px;
+		color: var(--secondary-text-color);
+	}
+	.req-user .ph {
+		width: 42px;
+		height: 42px;
+		border-radius: 50%;
+		display: grid;
+		place-items: center;
+		background: var(--elevated-color);
+		color: var(--third-text-color);
+	}
+	.search {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 12px 16px;
+		margin-bottom: 24px;
+		border-radius: 14px;
+		background: var(--alt-background-color);
+		border: 1px solid var(--glass-border);
+		color: var(--secondary-text-color);
+	}
+	.search input {
+		flex: 1;
+		border: none;
+		background: transparent;
+		color: var(--text-color);
+		font-size: 15px;
+		outline: none;
+	}
+	.muted {
+		color: var(--secondary-text-color);
+		margin-bottom: 24px;
 	}
 	.auth-needed {
 		text-align: center;

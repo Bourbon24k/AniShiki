@@ -188,7 +188,39 @@ export async function setRating(release, vote) {
 	if (error) throw error;
 }
 
+/** Расширенная статистика просмотра (для профиля). */
+export async function watchStats() {
+	if (!supabase || !uid()) return { hours: 0, episodes: 0, avgRating: 0 };
+	const [hist, rated] = await Promise.all([
+		supabase.from('history').select('seconds'),
+		supabase.from('ratings').select('vote')
+	]);
+	const totalSec = (hist.data || []).reduce((s, r) => s + (r.seconds || 0), 0);
+	const votes = (rated.data || []).map((r) => r.vote);
+	const avg = votes.length ? votes.reduce((a, b) => a + b, 0) / votes.length : 0;
+	return {
+		hours: Math.round((totalSec / 3600) * 10) / 10,
+		episodes: (hist.data || []).length,
+		avgRating: Math.round(avg * 10) / 10
+	};
+}
+
 // ── Профиль ──
+
+/** Загрузить файл аватара в Storage и вернуть публичный URL. */
+export async function uploadAvatar(file) {
+	if (!supabase || !uid()) throw new Error('Нет аккаунта');
+	const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+	const path = `${uid()}/avatar_${Date.now()}.${ext}`;
+	const { error } = await supabase.storage.from('avatars').upload(path, file, {
+		upsert: true,
+		cacheControl: '3600',
+		contentType: file.type || undefined
+	});
+	if (error) throw error;
+	const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+	return data.publicUrl;
+}
 
 export async function updateProfile({ username, avatar_url } = {}) {
 	if (!supabase || !uid()) throw new Error('Нет аккаунта');

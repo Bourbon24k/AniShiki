@@ -3,16 +3,19 @@
 	import { goto } from '$app/navigation';
 	import { userToken, showToast } from '$lib/stores';
 	import { siteSession, siteProfile, authReady, refreshProfile } from '$lib/stores/auth';
-	import { counts, updateProfile } from '$lib/sitedata';
+	import { counts, watchStats, updateProfile, uploadAvatar } from '$lib/sitedata';
 	import Icon from '$lib/components/Icon.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 
 	let stats = {};
+	let wstats = { hours: 0, episodes: 0, avgRating: 0 };
 	let loading = true;
 	let editing = false;
 	let username = '';
 	let avatar = '';
 	let saving = false;
+	let uploading = false;
+	let fileInput;
 
 	$: profile = $siteProfile;
 	$: email = $siteSession?.user?.email || '';
@@ -30,8 +33,24 @@
 
 	async function loadStats() {
 		loading = true;
-		stats = await counts();
+		[stats, wstats] = await Promise.all([counts(), watchStats()]);
 		loading = false;
+	}
+
+	async function onPickFile(e) {
+		const file = e.target.files?.[0];
+		if (!file) return;
+		if (file.size > 5 * 1024 * 1024) return showToast('Файл больше 5 МБ', 'error');
+		uploading = true;
+		try {
+			const url = await uploadAvatar(file);
+			await updateProfile({ avatar_url: url });
+			await refreshProfile();
+			showToast('Аватар обновлён', 'success');
+		} catch {
+			showToast('Не удалось загрузить', 'error');
+		}
+		uploading = false;
 	}
 
 	function startEdit() {
@@ -74,13 +93,21 @@
 		<Spinner center label="Загрузка…" />
 	{:else if $siteSession}
 		<div class="head">
-			<div class="ava">
+			<button class="ava" on:click={() => fileInput.click()} title="Загрузить аватар">
 				{#if profile?.avatar_url}
 					<img src={profile.avatar_url} alt="" referrerpolicy="no-referrer" />
 				{:else}
 					<Icon name="user" size={40} />
 				{/if}
-			</div>
+				<span class="ava-ov">{#if uploading}…{:else}<Icon name="settings" size={18} />{/if}</span>
+			</button>
+			<input
+				type="file"
+				accept="image/*"
+				bind:this={fileInput}
+				on:change={onPickFile}
+				style="display:none"
+			/>
 			<div class="who">
 				<h1>{profile?.username || 'Профиль'}</h1>
 				<span class="email">{email}</span>
@@ -104,7 +131,15 @@
 			</div>
 		{/if}
 
-		<h2>Моя статистика</h2>
+		{#if !loading}
+			<div class="wstats">
+				<div class="w"><span class="wn">{wstats.hours}</span><span class="wl">часов просмотра</span></div>
+				<div class="w"><span class="wn">{wstats.episodes}</span><span class="wl">серий в истории</span></div>
+				<div class="w"><span class="wn">{wstats.avgRating || '—'}</span><span class="wl">средняя оценка</span></div>
+			</div>
+		{/if}
+
+		<h2>Мои списки</h2>
 		{#if loading}
 			<Spinner size={28} />
 		{:else}
@@ -133,6 +168,7 @@
 		margin-bottom: 24px;
 	}
 	.ava {
+		position: relative;
 		width: 88px;
 		height: 88px;
 		min-width: 88px;
@@ -142,11 +178,53 @@
 		place-items: center;
 		background: var(--elevated-color);
 		color: var(--third-text-color);
+		border: none;
+		cursor: pointer;
+		padding: 0;
 	}
 	.ava img {
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
+	}
+	.ava-ov {
+		position: absolute;
+		inset: auto 0 0 0;
+		height: 28px;
+		display: grid;
+		place-items: center;
+		color: #fff;
+		background: rgba(0, 0, 0, 0.55);
+		opacity: 0;
+		transition: opacity 0.15s ease;
+	}
+	.ava:hover .ava-ov {
+		opacity: 1;
+	}
+	.wstats {
+		display: flex;
+		gap: 12px;
+		margin-bottom: 28px;
+		flex-wrap: wrap;
+	}
+	.wstats .w {
+		flex: 1;
+		min-width: 120px;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 16px 18px;
+		border-radius: 14px;
+		background: linear-gradient(135deg, color-mix(in srgb, var(--primary-color) 14%, var(--alt-background-color)), var(--alt-background-color));
+		border: 1px solid var(--glass-border);
+	}
+	.wstats .wn {
+		font-size: 28px;
+		font-weight: 800;
+	}
+	.wstats .wl {
+		font-size: 12.5px;
+		color: var(--secondary-text-color);
 	}
 	.who {
 		flex: 1;

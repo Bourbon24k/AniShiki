@@ -19,7 +19,7 @@
 		{ path: '/collections', icon: 'collection', label: 'Коллекции' },
 		{ path: '/bookmarks', icon: 'bookmark', label: 'Закладки', auth: true, site: true },
 		{ path: '/history', icon: 'history', label: 'История', auth: true, site: true },
-		{ path: '/friends', icon: 'friends', label: 'Друзья', auth: true }
+		{ path: '/friends', icon: 'friends', label: 'Друзья', auth: true, site: true }
 	];
 	const bottomItems = [
 		{ path: '/notifications', icon: 'notification', label: 'Уведомления', auth: true, badge: true },
