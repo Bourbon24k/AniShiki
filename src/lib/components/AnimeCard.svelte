@@ -7,7 +7,9 @@
 	export let index = null;
 
 	$: status = getStatusInfo(anime?.status);
-	$: poster = thumb(anime?.image || anime?.poster, { w: type === 'full-row' ? 280 : 320 });
+	$: poster = thumb(anime?.image || anime?.poster, { w: type === 'full-row' ? 256 : 320 });
+	$: epStr = returnEpisodeString(anime);
+	$: hasMeta = epStr !== '?' || anime?.year != null;
 </script>
 
 <a href={`/release/${anime.id}`} class="card {type}" style="--idx:{index}">
@@ -24,14 +26,16 @@
 		{#if anime?.status}
 			<span class="status" style="--c:{status.color}">{status.text}</span>
 		{/if}
-		<span class="age">{getAgeRate(anime?.age_rating)}</span>
+		{#if anime?.age_rating != null}
+			<span class="age">{getAgeRate(anime?.age_rating)}</span>
+		{/if}
 		{#if anime?.grade}
 			<span class="grade"><Icon name="star" size={12} fill="#ffc107" />{anime.grade.toFixed(1)}</span>
 		{/if}
 		{#if type === 'poster'}
 			<div class="poster-info">
 				<h3>{anime.title_ru}</h3>
-				<span class="meta">{returnEpisodeString(anime)} эп. · {anime.year || ''}</span>
+				{#if hasMeta}<span class="meta">{epStr} эп.{anime.year ? ` · ${anime.year}` : ''}</span>{/if}
 			</div>
 		{/if}
 	</div>
@@ -43,10 +47,12 @@
 				<p class="alt">{anime.title_original || ''}</p>
 				<p class="desc">{(anime.description || '').slice(0, 220)}</p>
 			{/if}
-			<div class="meta">
-				<span>{returnEpisodeString(anime)} эп.</span>
-				{#if anime.year}<span>· {anime.year}</span>{/if}
-			</div>
+			{#if hasMeta}
+				<div class="meta">
+					<span>{epStr} эп.</span>
+					{#if anime.year}<span>· {anime.year}</span>{/if}
+				</div>
+			{/if}
 			{#if type === 'full-row'}
 				<div class="genres">
 					{#each parseGenres(anime.genres, 4) as g}

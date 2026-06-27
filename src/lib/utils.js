@@ -198,24 +198,33 @@ export function fmtNum(n) {
 	return (n || 0).toLocaleString('ru-RU');
 }
 
+/** Допустимые ширины оптимизатора Vercel (должны совпадать с images.sizes в vercel.json). */
+const PROXY_SIZES = [64, 96, 128, 256, 320, 400, 480, 640, 720, 1080, 1280];
+/** Только CDN Anixart проксируем — чужие хосты (аватары imgur и т.п.) оставляем как есть. */
+const PROXY_HOST = /(?:^|\.)(?:anixmirai\.com|anixart\.(?:app|tv)|anixsekai\.com)$/i;
+
 /**
- * Прокси-ресайзер картинок через images.weserv.nl.
- * Уменьшает вес обложек в разы (WebP + ресайз под реальный размер карточки)
- * и отдаёт их с собственного быстрого CDN с кэшем.
- * @param {string} url исходный URL картинки (CDN Anixart)
- * @param {{w?: number, h?: number, q?: number}} opts
+ * Ресайз/конвертация обложек через same-origin оптимизатор Vercel (/_vercel/image).
+ * Отдаётся с того же домена, что и приложение → доступен везде, где открывается сайт
+ * (в т.ч. там, где CDN Anixart режется), плюс ресайз под карточку и WebP.
+ * Чужие хосты и dev-режим возвращаются без изменений.
+ * @param {string} url исходный URL картинки
+ * @param {{w?: number, q?: number}} opts
  */
 export function thumb(url, opts = {}) {
 	if (!url || typeof url !== 'string') return url;
-	// локальные ассеты и data-URI не трогаем
-	if (url.startsWith('/') || url.startsWith('data:') || url.startsWith('blob:')) return url;
-	const { w = 0, h = 0, q = 80 } = opts;
-	const src = url.replace(/^https?:\/\//, '');
-	let out = `https://images.weserv.nl/?url=${encodeURIComponent(src)}&output=webp&q=${q}&we`;
-	if (w) out += `&w=${w}`;
-	if (h) out += `&h=${h}`;
-	if (w && h) out += '&fit=cover';
-	return out;
+	if (!/^https?:\/\//i.test(url)) return url; // локальные ассеты, data:, blob:
+	let host;
+	try {
+		host = new URL(url).hostname;
+	} catch {
+		return url;
+	}
+	if (!PROXY_HOST.test(host)) return url; // не CDN Anixart — без прокси
+	if (import.meta.env.DEV) return url; // оптимизатор доступен только на Vercel, не на dev-сервере
+	const { w = 320, q = 75 } = opts;
+	const width = PROXY_SIZES.find((s) => s >= w) || PROXY_SIZES[PROXY_SIZES.length - 1];
+	return `/_vercel/image?url=${encodeURIComponent(url)}&w=${width}&q=${q}`;
 }
 
 /** Список жанров строкой → массив. */

@@ -4,5 +4,16 @@
 	"buildCommand": "npm run build",
 	"outputDirectory": "build",
 	"installCommand": "npm install",
+	"images": {
+		"sizes": [64, 96, 128, 256, 320, 400, 480, 640, 720, 1080, 1280],
+		"formats": ["image/webp"],
+		"minimumCacheTTL": 2678400,
+		"remotePatterns": [
+			{ "protocol": "https", "hostname": "*.anixmirai.com" },
+			{ "protocol": "https", "hostname": "*.anixart.app" },
+			{ "protocol": "https", "hostname": "*.anixart.tv" },
+			{ "protocol": "https", "hostname": "*.anixsekai.com" }
+		]
+	},
 	"rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }

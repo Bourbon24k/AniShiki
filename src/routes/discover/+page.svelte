@@ -25,6 +25,25 @@
 		}
 	}
 
+	// «Интересное» — промо-баннеры (title/image/action), не релизы.
+	// action — id релиза для перехода; приводим к форме, понятной AnimeCard.
+	async function safeInteresting(p) {
+		try {
+			const r = await p;
+			return (r?.content || [])
+				.map((x) => ({
+					id: Number(x.action) || x.id,
+					title_ru: x.title,
+					image: x.image,
+					description: x.description
+				}))
+				.filter((x) => x.id && x.image);
+		} catch (e) {
+			console.error('discover interesting', e);
+			return [];
+		}
+	}
+
 	async function loadRandom() {
 		randomLoading = true;
 		try {
@@ -45,7 +64,7 @@
 		if (!api) return;
 		loadRandom();
 		[interesting, discussing, topRated, films] = await Promise.all([
-			safe(api.discover.getInteresting(0)),
+			safeInteresting(api.discover.getInteresting(0)),
 			safe(api.discover.getDiscussing()),
 			safe(api.release.filter(0, { sort: 1 }, true)),
 			safe(api.release.filter(0, { sort: 1, category_id: 2 }, true))
