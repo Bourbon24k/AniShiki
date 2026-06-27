@@ -6,7 +6,7 @@
 	import { getApi } from '$lib/api';
 	import { userToken } from '$lib/stores';
 	import { siteSession } from '$lib/stores/auth';
-	import { listFavorites } from '$lib/sitedata';
+	import { listFavorites, listByStatus } from '$lib/sitedata';
 	import GridList from '$lib/components/GridList.svelte';
 
 	$: siteOnly = !$userToken && !!$siteSession;
@@ -36,7 +36,7 @@
 	async function load(reset = true) {
 		if (siteOnly) {
 			loading = true;
-			items = await listFavorites();
+			items = active === 'fav' ? await listFavorites() : await listByStatus(active);
 			hasMore = false;
 			loading = false;
 			return;
@@ -99,8 +99,13 @@
 	<h1>Закладки</h1>
 
 	{#if siteOnly}
+		<div class="tabs no-scrollbar">
+			{#each cats as c}
+				<button class="tab" class:active={active === c.key} on:click={() => pick(c.key)}>{c.label}</button>
+			{/each}
+		</div>
 		<div class="list">
-			<GridList {items} {loading} {loadingMore} onMore={more} empty="В избранном пусто" />
+			<GridList {items} {loading} {loadingMore} onMore={more} empty="Здесь пока пусто" />
 		</div>
 	{:else if !$userToken}
 		<div class="empty">

@@ -37,7 +37,7 @@
 	</a>
 
 	<a
-		href={utoken ? `/profile/${utoken.id}` : site ? '/settings' : '/login'}
+		href={utoken ? `/profile/${utoken.id}` : site ? '/me' : '/login'}
 		class="avatar"
 		title={utoken?.login || $siteProfile?.username || 'Войти'}
 	>

@@ -59,6 +59,12 @@ export async function siteSignOut() {
 	siteProfile.set(null);
 }
 
+/** Перечитать профиль текущего пользователя из БД. */
+export async function refreshProfile() {
+	const s = get(siteSession);
+	if (s?.user?.id) await loadProfile(s.user.id);
+}
+
 /** Текущее отображаемое имя пользователя сайта (или null). */
 export function currentSiteName() {
 	const p = get(siteProfile);

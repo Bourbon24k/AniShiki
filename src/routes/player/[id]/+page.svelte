@@ -6,7 +6,7 @@
 	import { userToken, playingSettings, showToast } from '$lib/stores';
 	import { supabaseEnabled } from '$lib/supabase';
 	import { siteProfile, siteSession, currentSiteName } from '$lib/stores/auth';
-	import { saveHistory } from '$lib/sitedata';
+	import { saveHistory, getHistoryEntry } from '$lib/sitedata';
 	import {
 		coActive,
 		coRoomId,
@@ -65,6 +65,26 @@
 	let hideTimer;
 	let lastAttached = '';
 	let pendingSeek = 0;
+	// «Продолжить с секунды» (site-аккаунт)
+	let resumeSec = 0;
+	let resumeEp = null;
+	let resumeApplied = false;
+	let lastProgressSave = 0;
+
+	function saveProgress(force = false) {
+		if ($userToken || !$siteSession || $playingSettings.disableHistory) return;
+		if (!videoEl || !release || !selectedEpisode) return;
+		const now = Date.now();
+		if (!force && now - lastProgressSave < 10000) return;
+		lastProgressSave = now;
+		saveHistory(release, {
+			episodePosition: epPos(selectedEpisode),
+			sourceId: selectedSource?.id,
+			dubberId: selectedDubber?.id,
+			seconds: videoEl.currentTime,
+			duration: videoEl.duration
+		}).catch(() => {});
+	}
 
 	// Совместный просмотр
 	let coName = '';
@@ -253,6 +273,16 @@
 		try {
 			const data = await api.release.info(releaseId, true);
 			release = data?.release;
+			// «Продолжить с секунды» для аккаунта сайта
+			if (!$userToken && $siteSession) {
+				try {
+					const h = await getHistoryEntry(releaseId);
+					if (h?.seconds > 5) {
+						resumeSec = h.seconds;
+						resumeEp = h.episode_position;
+					}
+				} catch {}
+			}
 			await loadDubbers();
 		} catch (e) {
 			console.error(e);
@@ -391,10 +421,15 @@
 	async function attachDirect(url) {
 		if (!videoEl) return;
 		videoEl.playbackRate = rate;
-		// восстановление позиции после смены качества
-		if (pendingSeek > 0) {
-			const t = pendingSeek;
-			pendingSeek = 0;
+		// позиция для перемотки: смена качества или «продолжить с секунды»
+		let seekTarget = pendingSeek;
+		pendingSeek = 0;
+		if (!seekTarget && !resumeApplied && resumeSec > 5 && epPos(selectedEpisode) === resumeEp) {
+			seekTarget = resumeSec;
+			resumeApplied = true;
+		}
+		if (seekTarget > 0) {
+			const t = seekTarget;
 			const onmeta = () => {
 				try {
 					videoEl.currentTime = t;
@@ -504,6 +539,7 @@
 		document.addEventListener('fullscreenchange', onFsChange);
 	});
 	onDestroy(() => {
+		saveProgress(true);
 		destroyHls();
 		clearTimeout(hideTimer);
 		leaveRoom();
@@ -571,7 +607,11 @@
 							on:playing={() => (buffering = false)}
 							on:canplay={() => (buffering = false)}
 							on:play={() => emitSync('play')}
-							on:pause={() => emitSync('pause')}
+							on:pause={() => {
+								emitSync('pause');
+								saveProgress(true);
+							}}
+							on:timeupdate={() => saveProgress()}
 							on:ended={onEnded}
 						></video>
 

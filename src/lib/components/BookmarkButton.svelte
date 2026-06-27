@@ -1,10 +1,13 @@
 <script>
 	import { getApi } from '$lib/api';
 	import { userToken, showToast } from '$lib/stores';
+	import { siteSession } from '$lib/stores/auth';
+	import { setListStatus } from '$lib/sitedata';
 	import Icon from './Icon.svelte';
 
 	export let releaseId;
 	export let status = 0;
+	export let release = null; // site-аккаунту нужен для сохранения title/image
 
 	let open = false;
 
@@ -21,14 +24,15 @@
 
 	async function pick(id) {
 		open = false;
-		if (!$userToken) {
+		if (!$userToken && !$siteSession) {
 			showToast('Войдите в аккаунт', 'error');
 			return;
 		}
 		const prev = status;
 		status = id;
 		try {
-			await getApi().release.addToProfileList(releaseId, id);
+			if ($userToken) await getApi().release.addToProfileList(releaseId, id);
+			else await setListStatus(release || { id: releaseId }, id);
 			showToast(id === 0 ? 'Убрано из списка' : `В список: ${LISTS.find((l) => l.id === id).label}`, 'success');
 		} catch (e) {
 			status = prev;

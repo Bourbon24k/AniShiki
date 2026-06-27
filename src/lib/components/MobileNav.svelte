@@ -1,11 +1,13 @@
 <script>
 	import { page } from '$app/stores';
 	import { userToken, notificationCount } from '$lib/stores';
+	import { siteSession } from '$lib/stores/auth';
 	import Icon from './Icon.svelte';
 
 	$: path = $page.url.pathname;
 	$: utoken = $userToken;
 	$: nCount = $notificationCount;
+	$: loggedIn = !!utoken || !!$siteSession;
 
 	function isActive(p) {
 		return p === '/' ? path === '/' : path.startsWith(p);
@@ -22,16 +24,22 @@
 	<a href="/search" class="item" class:active={isActive('/search')}>
 		<Icon name="search" size={22} /><span>Поиск</span>
 	</a>
-	{#if utoken}
+	{#if loggedIn}
 		<a href="/bookmarks" class="item" class:active={isActive('/bookmarks')}>
 			<Icon name="bookmark" size={22} /><span>Закладки</span>
 		</a>
-		<a href="/notifications" class="item" class:active={isActive('/notifications')}>
-			<span class="ico-wrap">
-				<Icon name="notification" size={22} />
-				{#if nCount > 0}<span class="dot"></span>{/if}
-			</span><span>Уведом.</span>
-		</a>
+		{#if utoken}
+			<a href="/notifications" class="item" class:active={isActive('/notifications')}>
+				<span class="ico-wrap">
+					<Icon name="notification" size={22} />
+					{#if nCount > 0}<span class="dot"></span>{/if}
+				</span><span>Уведом.</span>
+			</a>
+		{:else}
+			<a href="/history" class="item" class:active={isActive('/history')}>
+				<Icon name="history" size={22} /><span>История</span>
+			</a>
+		{/if}
 	{:else}
 		<a href="/login" class="item" class:active={isActive('/login')}>
 			<Icon name="user" size={22} /><span>Войти</span>
