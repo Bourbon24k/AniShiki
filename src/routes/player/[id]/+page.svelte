@@ -1,9 +1,22 @@
 <script>
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { getApi } from '$lib/api';
-	import { userToken, playingSettings } from '$lib/stores';
+	import { userToken, playingSettings, showToast } from '$lib/stores';
+	import { supabaseEnabled } from '$lib/supabase';
+	import { siteProfile, currentSiteName } from '$lib/stores/auth';
+	import {
+		coActive,
+		coRoomId,
+		participants,
+		chat,
+		joinRoom,
+		leaveRoom,
+		sendSync,
+		sendChat,
+		genRoomId
+	} from '$lib/cowatch';
 	import Icon from '$lib/components/Icon.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 
@@ -49,6 +62,94 @@
 	let lastAttached = '';
 	let pendingSeek = 0;
 
+	// Совместный просмотр
+	let coName = '';
+	let coPanel = false;
+	let chatText = '';
+	let applyingRemote = false;
+	$: coOn = $coActive;
+
+	function coIdentity() {
+		return { name: coName || currentSiteName() || 'Гость', avatar: $siteProfile?.avatar_url || null };
+	}
+	function emitSync(action) {
+		if (!coOn || applyingRemote || !videoEl) return;
+		sendSync({
+			action,
+			time: videoEl.currentTime || 0,
+			paused: videoEl.paused,
+			epPos: epPos(selectedEpisode),
+			dubberId: selectedDubber?.id,
+			sourceId: selectedSource?.id
+		});
+	}
+	function sendCurrentState() {
+		if (!videoEl) return;
+		sendSync({
+			action: 'state',
+			time: videoEl.currentTime || 0,
+			paused: videoEl.paused,
+			epPos: epPos(selectedEpisode),
+			dubberId: selectedDubber?.id,
+			sourceId: selectedSource?.id
+		});
+	}
+	async function applySync(p) {
+		applyingRemote = true;
+		try {
+			if (p.dubberId && p.dubberId !== selectedDubber?.id) {
+				const d = dubbers.find((x) => x.id === p.dubberId);
+				if (d) await selectDubber(d);
+			}
+			if (p.sourceId && p.sourceId !== selectedSource?.id) {
+				const s = sources.find((x) => x.id === p.sourceId);
+				if (s) await selectSource(s);
+			}
+			if (p.epPos != null && p.epPos !== epPos(selectedEpisode)) {
+				const e = episodes.find((x) => epPos(x) === p.epPos);
+				if (e) await selectEpisode(e);
+			}
+			await tick();
+			if (videoEl) {
+				if (p.time != null && Math.abs((videoEl.currentTime || 0) - p.time) > 1.5) videoEl.currentTime = p.time;
+				if (p.paused === true) videoEl.pause();
+				else if (p.paused === false) videoEl.play().catch(() => {});
+			}
+		} catch (e) {
+			console.warn('applySync', e);
+		} finally {
+			setTimeout(() => (applyingRemote = false), 400);
+		}
+	}
+
+	function startRoom() {
+		if (!coName.trim() && !currentSiteName()) {
+			showToast('Введите имя для комнаты', 'error');
+			return;
+		}
+		const id = $coRoomId || genRoomId();
+		joinRoom(id, coIdentity(), { onSync: applySync, onRequestState: sendCurrentState });
+		const url = new URL(location.href);
+		url.searchParams.set('room', id);
+		history.replaceState(null, '', url);
+		coPanel = true;
+	}
+	function leaveCo() {
+		leaveRoom();
+		const url = new URL(location.href);
+		url.searchParams.delete('room');
+		history.replaceState(null, '', url);
+	}
+	function copyRoomLink() {
+		navigator.clipboard?.writeText(location.href).then(() => showToast('Ссылка скопирована', 'success'));
+	}
+	function submitChat() {
+		const t = chatText.trim();
+		if (!t) return;
+		sendChat(t, coIdentity());
+		chatText = '';
+	}
+
 	// Привязываем источник реактивно: как только <video> в DOM и есть URL.
 	$: if (videoEl && videoUrl && mode !== 'iframe' && videoUrl !== lastAttached) {
 		lastAttached = videoUrl;
@@ -84,6 +185,7 @@
 	}
 	function seekTo(t) {
 		if (videoEl) videoEl.currentTime = t;
+		emitSync('seek');
 		showControlsTemp();
 	}
 	function skip(sec) {
@@ -205,6 +307,7 @@
 	async function selectEpisode(ep) {
 		selectedEpisode = ep;
 		await loadVideo();
+		emitSync('episode');
 		const pos = epPos(ep);
 		if ($userToken && selectedSource && pos != null && !$playingSettings.disableHistory) {
 			try {
@@ -368,14 +471,28 @@
 		isFs = !!document.fullscreenElement;
 	}
 
+	async function maybeAutoJoin() {
+		const rid = $page.url.searchParams.get('room');
+		if (!rid || !supabaseEnabled) return;
+		coPanel = true;
+		coName = currentSiteName() || coName;
+		// дождаться загрузки эпизодов, чтобы корректно применить состояние
+		await loadRelease();
+		joinRoom(rid, coIdentity(), { onSync: applySync, onRequestState: sendCurrentState });
+	}
+
 	onMount(() => {
-		loadRelease();
+		coName = currentSiteName() || '';
+		const rid = $page.url.searchParams.get('room');
+		if (rid && supabaseEnabled) maybeAutoJoin();
+		else loadRelease();
 		window.addEventListener('keydown', onKey);
 		document.addEventListener('fullscreenchange', onFsChange);
 	});
 	onDestroy(() => {
 		destroyHls();
 		clearTimeout(hideTimer);
+		leaveRoom();
 		if (typeof window !== 'undefined') {
 			window.removeEventListener('keydown', onKey);
 			document.removeEventListener('fullscreenchange', onFsChange);
@@ -439,6 +556,8 @@
 							on:waiting={() => (buffering = true)}
 							on:playing={() => (buffering = false)}
 							on:canplay={() => (buffering = false)}
+							on:play={() => emitSync('play')}
+							on:pause={() => emitSync('pause')}
 							on:ended={onEnded}
 						></video>
 
@@ -556,6 +675,43 @@
 		</div>
 
 		<aside class="panel" class:open={panelOpen}>
+			{#if supabaseEnabled}
+				<div class="group cowatch">
+					<h3>Совместный просмотр {#if coOn}<span class="cnt">{$participants.length}</span>{/if}</h3>
+					{#if !coOn}
+						<p class="co-hint">Смотрите вместе с друзьями — действия плеера синхронизируются.</p>
+						{#if !currentSiteName()}
+							<input class="co-name" placeholder="Ваше имя" bind:value={coName} maxlength="24" />
+						{/if}
+						<button class="co-btn primary" on:click={startRoom}>Создать комнату</button>
+					{:else}
+						<div class="co-room">
+							<button class="co-btn" on:click={copyRoomLink}><Icon name="feed" size={16} /> Скопировать ссылку</button>
+							<div class="parts">
+								{#each $participants as p (p.id)}
+									<span class="part" title={p.name}>
+										{#if p.avatar}<img src={p.avatar} alt="" referrerpolicy="no-referrer" />{:else}<span class="pa">{(p.name || '?')[0]}</span>{/if}
+										{p.name}
+									</span>
+								{/each}
+							</div>
+							<div class="chatbox">
+								<div class="msgs">
+									{#each $chat as m (m.ts + m.from)}
+										<div class="msg"><b>{m.name}:</b> {m.text}</div>
+									{/each}
+								</div>
+								<form class="chat-in" on:submit|preventDefault={submitChat}>
+									<input placeholder="Сообщение…" bind:value={chatText} maxlength="300" />
+									<button type="submit" aria-label="Отправить"><Icon name="chevronRight" size={18} /></button>
+								</form>
+							</div>
+							<button class="co-btn danger" on:click={leaveCo}>Выйти из комнаты</button>
+						</div>
+					{/if}
+				</div>
+			{/if}
+
 			<div class="group">
 				<h3>Озвучка</h3>
 				<div class="chips">
@@ -968,6 +1124,125 @@
 	.mopts button.active {
 		background: var(--primary-color);
 		border-color: transparent;
+	}
+
+	/* совместный просмотр */
+	.cowatch {
+		padding-bottom: 20px;
+		border-bottom: 1px solid var(--glass-border);
+	}
+	.co-hint {
+		font-size: 12.5px;
+		color: var(--secondary-text-color);
+		line-height: 1.5;
+		margin-bottom: 12px;
+	}
+	.co-name,
+	.chat-in input {
+		width: 100%;
+		padding: 10px 12px;
+		border-radius: 10px;
+		border: 1px solid var(--glass-border);
+		background: var(--alt-background-color);
+		color: var(--text-color);
+		font-size: 13px;
+		outline: none;
+		margin-bottom: 10px;
+	}
+	.co-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		width: 100%;
+		padding: 11px;
+		border: 1px solid var(--glass-border);
+		background: var(--elevated-color);
+		color: var(--text-color);
+		border-radius: 10px;
+		cursor: pointer;
+		font-weight: 600;
+		font-size: 13px;
+	}
+	.co-btn.primary {
+		background: var(--primary-color);
+		border-color: transparent;
+		color: #fff;
+	}
+	.co-btn.danger {
+		color: var(--danger-color);
+	}
+	.co-room {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.parts {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.part {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 4px 9px 4px 4px;
+		background: var(--alt-background-color);
+		border-radius: 20px;
+		font-size: 12px;
+	}
+	.part img,
+	.part .pa {
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		object-fit: cover;
+		display: grid;
+		place-items: center;
+		background: var(--primary-color);
+		color: #fff;
+		font-size: 11px;
+		font-weight: 700;
+	}
+	.chatbox {
+		display: flex;
+		flex-direction: column;
+		background: var(--background-color);
+		border: 1px solid var(--glass-border);
+		border-radius: 12px;
+		overflow: hidden;
+	}
+	.msgs {
+		max-height: 180px;
+		overflow-y: auto;
+		padding: 10px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		font-size: 13px;
+	}
+	.msg b {
+		color: var(--primary-color);
+	}
+	.chat-in {
+		display: flex;
+		gap: 6px;
+		padding: 8px;
+		border-top: 1px solid var(--glass-border);
+	}
+	.chat-in input {
+		margin-bottom: 0;
+	}
+	.chat-in button {
+		flex-shrink: 0;
+		width: 38px;
+		border: none;
+		border-radius: 10px;
+		background: var(--primary-color);
+		color: #fff;
+		cursor: pointer;
+		display: grid;
+		place-items: center;
 	}
 
 	.panel {

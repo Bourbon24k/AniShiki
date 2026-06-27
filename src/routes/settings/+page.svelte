@@ -3,7 +3,14 @@
 	import { guiSettings, endpointUrl, playingSettings, userToken, notificationCount, showToast } from '$lib/stores';
 	import { reinitApi } from '$lib/api';
 	import { themeValues, endpointValues, sourceValues, qualityValues } from '$lib/utils';
+	import { supabaseEnabled } from '$lib/supabase';
+	import { siteSession, siteProfile, siteSignOut, currentSiteName } from '$lib/stores/auth';
 	import Icon from '$lib/components/Icon.svelte';
+
+	async function siteLogout() {
+		await siteSignOut();
+		showToast('Вы вышли из аккаунта AniShiki', 'info');
+	}
 
 	function setTheme(t) {
 		guiSettings.update((s) => ({ ...s, theme: t }));
@@ -54,6 +61,26 @@
 		{:else}
 			<section class="card">
 				<a class="login-cta" href="/login">Войти в аккаунт Anixart</a>
+			</section>
+		{/if}
+
+		{#if supabaseEnabled}
+			<section class="card">
+				<h2 class="card-title">Аккаунт AniShiki</h2>
+				{#if $siteSession}
+					<div class="account static">
+						<div class="ava">
+							{#if $siteProfile?.avatar_url}<img src={$siteProfile.avatar_url} alt="" referrerpolicy="no-referrer" />{:else}<Icon name="user" size={26} />{/if}
+						</div>
+						<div>
+							<span class="login">{currentSiteName()}</span>
+							<span class="sub">{$siteSession.user?.email}</span>
+						</div>
+					</div>
+					<button class="logout" on:click={siteLogout}>Выйти из аккаунта AniShiki</button>
+				{:else}
+					<a class="login-cta" href="/register">Создать аккаунт AniShiki</a>
+				{/if}
 			</section>
 		{/if}
 

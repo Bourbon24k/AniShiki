@@ -2,14 +2,36 @@
 	import { goto } from '$app/navigation';
 	import { getApi, reinitApi, setApiToken } from '$lib/api';
 	import { userToken, notificationCount, showToast } from '$lib/stores';
+	import { supabaseEnabled } from '$lib/supabase';
+	import { siteSignIn } from '$lib/stores/auth';
 	import Icon from '$lib/components/Icon.svelte';
 
+	let tab = 'anixart'; // 'anixart' | 'site'
 	let login = '';
 	let password = '';
+	let email = '';
+	let sitePassword = '';
 	let loading = false;
 	let errorMsg = '';
 
 	const errs = { 2: 'Неверный логин', 3: 'Неверный пароль' };
+
+	async function submitSite() {
+		if (!email.trim() || !sitePassword) {
+			errorMsg = 'Заполните все поля';
+			return;
+		}
+		loading = true;
+		errorMsg = '';
+		try {
+			await siteSignIn(email.trim(), sitePassword);
+			showToast('Вы вошли в аккаунт AniShiki', 'success');
+			goto('/');
+		} catch (e) {
+			errorMsg = e?.message === 'Invalid login credentials' ? 'Неверный email или пароль' : e?.message || 'Не удалось войти';
+		}
+		loading = false;
+	}
 
 	async function submit() {
 		if (!login.trim() || !password) {
@@ -54,24 +76,50 @@
 	<div class="card glass">
 		<a href="/" class="logo"><img src="/favicon.svg" alt="AniShiki" /></a>
 		<h1>С возвращением</h1>
-		<p class="sub">Войдите в аккаунт Anixart</p>
+		<p class="sub">{tab === 'site' ? 'Войдите в аккаунт AniShiki' : 'Войдите в аккаунт Anixart'}</p>
 
-		<form on:submit|preventDefault={submit}>
-			<label>
-				<span>Логин или email</span>
-				<input type="text" bind:value={login} autocomplete="username" placeholder="ваш логин" />
-			</label>
-			<label>
-				<span>Пароль</span>
-				<input type="password" bind:value={password} autocomplete="current-password" placeholder="••••••••" />
-			</label>
+		{#if supabaseEnabled}
+			<div class="tabs">
+				<button class:active={tab === 'anixart'} on:click={() => { tab = 'anixart'; errorMsg = ''; }}>Anixart</button>
+				<button class:active={tab === 'site'} on:click={() => { tab = 'site'; errorMsg = ''; }}>Аккаунт сайта</button>
+			</div>
+		{/if}
 
-			{#if errorMsg}<div class="err">{errorMsg}</div>{/if}
+		{#if tab === 'anixart'}
+			<form on:submit|preventDefault={submit}>
+				<label>
+					<span>Логин или email</span>
+					<input type="text" bind:value={login} autocomplete="username" placeholder="ваш логин" />
+				</label>
+				<label>
+					<span>Пароль</span>
+					<input type="password" bind:value={password} autocomplete="current-password" placeholder="••••••••" />
+				</label>
 
-			<button class="submit" type="submit" disabled={loading}>
-				{loading ? 'Вход…' : 'Войти'}
-			</button>
-		</form>
+				{#if errorMsg}<div class="err">{errorMsg}</div>{/if}
+
+				<button class="submit" type="submit" disabled={loading}>
+					{loading ? 'Вход…' : 'Войти'}
+				</button>
+			</form>
+		{:else}
+			<form on:submit|preventDefault={submitSite}>
+				<label>
+					<span>Email</span>
+					<input type="email" bind:value={email} autocomplete="email" placeholder="you@example.com" />
+				</label>
+				<label>
+					<span>Пароль</span>
+					<input type="password" bind:value={sitePassword} autocomplete="current-password" placeholder="••••••••" />
+				</label>
+
+				{#if errorMsg}<div class="err">{errorMsg}</div>{/if}
+
+				<button class="submit" type="submit" disabled={loading}>
+					{loading ? 'Вход…' : 'Войти'}
+				</button>
+			</form>
+		{/if}
 
 		<p class="foot">
 			Нет аккаунта? <a href="/register">Зарегистрироваться</a>
@@ -119,7 +167,31 @@
 	}
 	.sub {
 		color: var(--secondary-text-color);
-		margin: 8px 0 28px;
+		margin: 8px 0 20px;
+	}
+	.tabs {
+		display: flex;
+		gap: 6px;
+		padding: 4px;
+		margin-bottom: 22px;
+		background: var(--background-color);
+		border: 1px solid var(--glass-border);
+		border-radius: 12px;
+	}
+	.tabs button {
+		flex: 1;
+		padding: 9px;
+		border: none;
+		background: transparent;
+		color: var(--secondary-text-color);
+		border-radius: 9px;
+		cursor: pointer;
+		font-size: 13.5px;
+		font-weight: 600;
+	}
+	.tabs button.active {
+		background: var(--primary-color);
+		color: #fff;
 	}
 	form {
 		display: flex;
