@@ -1,8 +1,57 @@
 // Извлечение прямого .m3u8 из Kodik-эмбеда (без рекламы).
 // Должно работать на сервере (CORS не даёт дёрнуть страницу Kodik и /ftor из браузера).
+//
+// Kodik блокирует дата-центровые IP (Vercel) — /ftor возвращает пусто.
+// Поэтому ходим к Kodik через SOCKS5-прокси из переменной окружения
+// KODIK_PROXY (формат socks5://user:pass@host:port). Без неё — напрямую (dev).
+
+import tls from 'node:tls';
+import { SocksClient } from 'socks';
+import { Agent, fetch as undiciFetch } from 'undici';
 
 const UA =
 	'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+let dispatcher = null;
+if (process.env.KODIK_PROXY) {
+	try {
+		const pu = new URL(process.env.KODIK_PROXY);
+		const proxy = {
+			host: pu.hostname,
+			port: Number(pu.port) || 1080,
+			type: pu.protocol.startsWith('socks4') ? 4 : 5,
+			userId: decodeURIComponent(pu.username || '') || undefined,
+			password: decodeURIComponent(pu.password || '') || undefined
+		};
+		dispatcher = new Agent({
+			connect: (opts, cb) => {
+				SocksClient.createConnection({
+					proxy,
+					command: 'connect',
+					destination: {
+						host: opts.hostname,
+						port: Number(opts.port) || (opts.protocol === 'https:' ? 443 : 80)
+					}
+				})
+					.then(({ socket }) => {
+						if (opts.protocol === 'https:') {
+							const t = tls.connect(
+								{ socket, servername: opts.servername || opts.hostname },
+								() => cb(null, t)
+							);
+							t.on('error', cb);
+						} else {
+							cb(null, socket);
+						}
+					})
+					.catch(cb);
+			}
+		});
+	} catch (e) {
+		console.error('Некорректный KODIK_PROXY:', e?.message);
+	}
+}
+const proxyOpts = dispatcher ? { dispatcher } : {};
 
 /** Kodik кодирует ссылки сдвигом букв +18 в пределах регистра, затем base64. */
 function decodeLink(str) {
@@ -28,7 +77,8 @@ export async function extractKodik(embedUrl) {
 	const u = new URL(url);
 	const origin = u.origin;
 
-	const pageRes = await fetch(url, {
+	const pageRes = await undiciFetch(url, {
+		...proxyOpts,
 		headers: { 'User-Agent': UA, Referer: 'https://anixart.app/' }
 	});
 	if (!pageRes.ok) throw new Error('embed ' + pageRes.status);
@@ -59,7 +109,8 @@ export async function extractKodik(embedUrl) {
 		id
 	});
 
-	const ftor = await fetch(origin + '/ftor', {
+	const ftor = await undiciFetch(origin + '/ftor', {
+		...proxyOpts,
 		method: 'POST',
 		headers: {
 			'User-Agent': UA,

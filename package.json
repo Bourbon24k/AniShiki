@@ -34,6 +34,8 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
     "anixartjs": "^0.1.8",
-    "hls.js": "^1.6.16"
+    "hls.js": "^1.6.16",
+    "socks": "^2.8.9",
+    "undici": "^8.5.0"
   }
 }
