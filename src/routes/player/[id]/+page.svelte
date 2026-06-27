@@ -127,6 +127,7 @@
 			showToast('Введите имя для комнаты', 'error');
 			return;
 		}
+		if (coName.trim()) try { localStorage.setItem('cowatch_name', coName.trim()); } catch {}
 		const id = $coRoomId || genRoomId();
 		joinRoom(id, coIdentity(), { onSync: applySync, onRequestState: sendCurrentState });
 		const url = new URL(location.href);
@@ -183,13 +184,13 @@
 		else videoEl.pause();
 		showControlsTemp();
 	}
-	function seekTo(t) {
+	function seekLocal(t) {
 		if (videoEl) videoEl.currentTime = t;
-		emitSync('seek');
 		showControlsTemp();
 	}
 	function skip(sec) {
 		if (videoEl) videoEl.currentTime = Math.max(0, Math.min(duration, videoEl.currentTime + sec));
+		emitSync('seek');
 		showControlsTemp();
 	}
 	function setVol(v) {
@@ -482,7 +483,11 @@
 	}
 
 	onMount(() => {
-		coName = currentSiteName() || '';
+		try {
+			coName = currentSiteName() || localStorage.getItem('cowatch_name') || '';
+		} catch {
+			coName = currentSiteName() || '';
+		}
 		const rid = $page.url.searchParams.get('room');
 		if (rid && supabaseEnabled) maybeAutoJoin();
 		else loadRelease();
@@ -593,7 +598,8 @@
 										max={duration || 0}
 										step="0.1"
 										value={currentTime}
-										on:input={(e) => seekTo(+e.target.value)}
+										on:input={(e) => seekLocal(+e.target.value)}
+									on:change={() => emitSync('seek')}
 									/>
 								</div>
 
