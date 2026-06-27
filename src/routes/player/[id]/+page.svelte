@@ -5,14 +5,18 @@
 	import { getApi } from '$lib/api';
 	import { userToken, playingSettings, showToast } from '$lib/stores';
 	import { supabaseEnabled } from '$lib/supabase';
-	import { siteProfile, currentSiteName } from '$lib/stores/auth';
+	import { siteProfile, siteSession, currentSiteName } from '$lib/stores/auth';
+	import { saveHistory } from '$lib/sitedata';
 	import {
 		coActive,
 		coRoomId,
 		participants,
 		chat,
+		isHost,
+		hostOnly,
 		joinRoom,
 		leaveRoom,
+		setHostOnly,
 		sendSync,
 		sendChat,
 		genRoomId
@@ -74,6 +78,7 @@
 	}
 	function emitSync(action) {
 		if (!coOn || applyingRemote || !videoEl) return;
+		if ($hostOnly && !$isHost) return; // в режиме «только хост» гости не управляют
 		sendSync({
 			action,
 			time: videoEl.currentTime || 0,
@@ -129,7 +134,7 @@
 		}
 		if (coName.trim()) try { localStorage.setItem('cowatch_name', coName.trim()); } catch {}
 		const id = $coRoomId || genRoomId();
-		joinRoom(id, coIdentity(), { onSync: applySync, onRequestState: sendCurrentState });
+		joinRoom(id, coIdentity(), { onSync: applySync, onRequestState: sendCurrentState }, true);
 		const url = new URL(location.href);
 		url.searchParams.set('room', id);
 		history.replaceState(null, '', url);
@@ -310,11 +315,15 @@
 		await loadVideo();
 		emitSync('episode');
 		const pos = epPos(ep);
-		if ($userToken && selectedSource && pos != null && !$playingSettings.disableHistory) {
+		if ($playingSettings.disableHistory) return;
+		if ($userToken && selectedSource && pos != null) {
 			try {
 				await getApi().release.addToHistory(releaseId, selectedSource.id, pos);
 				await getApi().release.markEpisodeAsWatched(releaseId, selectedSource.id, pos);
 			} catch {}
+		} else if (!$userToken && $siteSession && release) {
+			// аккаунт сайта → история в Supabase
+			saveHistory(release, { episodePosition: pos, sourceId: selectedSource?.id, dubberId: selectedDubber?.id }).catch(() => {});
 		}
 	}
 
@@ -479,7 +488,7 @@
 		coName = currentSiteName() || coName;
 		// дождаться загрузки эпизодов, чтобы корректно применить состояние
 		await loadRelease();
-		joinRoom(rid, coIdentity(), { onSync: applySync, onRequestState: sendCurrentState });
+		joinRoom(rid, coIdentity(), { onSync: applySync, onRequestState: sendCurrentState }, false);
 	}
 
 	onMount(() => {
@@ -695,12 +704,21 @@
 							<button class="co-btn" on:click={copyRoomLink}><Icon name="feed" size={16} /> Скопировать ссылку</button>
 							<div class="parts">
 								{#each $participants as p (p.id)}
-									<span class="part" title={p.name}>
+									<span class="part" class:host={p.host} title={p.host ? p.name + ' (хост)' : p.name}>
 										{#if p.avatar}<img src={p.avatar} alt="" referrerpolicy="no-referrer" />{:else}<span class="pa">{(p.name || '?')[0]}</span>{/if}
-										{p.name}
+										{p.name}{#if p.host} ★{/if}
 									</span>
 								{/each}
 							</div>
+
+							{#if $isHost}
+								<label class="co-toggle">
+									<input type="checkbox" checked={$hostOnly} on:change={(e) => setHostOnly(e.target.checked)} />
+									<span>Только я управляю</span>
+								</label>
+							{:else if $hostOnly}
+								<p class="co-hint">Воспроизведением управляет хост.</p>
+							{/if}
 							<div class="chatbox">
 								<div class="msgs">
 									{#each $chat as m (m.ts + m.from)}
@@ -1196,6 +1214,23 @@
 		background: var(--alt-background-color);
 		border-radius: 20px;
 		font-size: 12px;
+	}
+	.part.host {
+		background: color-mix(in srgb, var(--primary-color) 22%, var(--alt-background-color));
+	}
+	.co-toggle {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 13px;
+		color: var(--secondary-text-color);
+		cursor: pointer;
+		user-select: none;
+	}
+	.co-toggle input {
+		width: 16px;
+		height: 16px;
+		accent-color: var(--primary-color);
 	}
 	.part img,
 	.part .pa {

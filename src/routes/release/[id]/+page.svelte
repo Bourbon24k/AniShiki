@@ -3,6 +3,8 @@
 	import { page } from '$app/stores';
 	import { getApi } from '$lib/api';
 	import { userToken, showToast } from '$lib/stores';
+	import { siteSession } from '$lib/stores/auth';
+	import { isFavorite as siteIsFav, addFavorite as siteAddFav, removeFavorite as siteRemoveFav } from '$lib/sitedata';
 	import {
 		returnEpisodeString,
 		getAgeRate,
@@ -84,6 +86,8 @@
 			isFavorite = !!release.is_favorite;
 			listStatus = release.profile_list_status || 0;
 			myVote = release.your_vote || 0;
+			// Для аккаунта сайта (без Anixart) — избранное из Supabase
+			if (!$userToken && $siteSession) isFavorite = await siteIsFav(release.id);
 			// Связанное и рекомендации приходят прямо в release.info (надёжнее отдельных запросов).
 			related = release.related_releases || [];
 			recommended = release.recommended_releases || [];
@@ -102,12 +106,18 @@
 	}
 
 	async function toggleFavorite() {
-		if (!$userToken) return showToast('Войдите в аккаунт', 'error');
+		if (!$userToken && !$siteSession) return showToast('Войдите в аккаунт', 'error');
 		const prev = isFavorite;
 		isFavorite = !isFavorite;
 		try {
-			if (prev) await getApi().release.removeFavorite(releaseId);
-			else await getApi().release.addFavorite(releaseId);
+			if ($userToken) {
+				if (prev) await getApi().release.removeFavorite(releaseId);
+				else await getApi().release.addFavorite(releaseId);
+			} else {
+				// аккаунт сайта → Supabase
+				if (prev) await siteRemoveFav(release.id);
+				else await siteAddFav(release);
+			}
 		} catch {
 			isFavorite = prev;
 			showToast('Ошибка', 'error');
@@ -196,7 +206,7 @@
 
 					<div class="actions">
 						<a class="btn primary" href={`/player/${release.id}`}><Icon name="play" size={20} /> Смотреть</a>
-						<BookmarkButton releaseId={release.id} bind:status={listStatus} />
+						{#if $userToken}<BookmarkButton releaseId={release.id} bind:status={listStatus} />{/if}
 						<button class="icon-btn" class:fav={isFavorite} on:click={toggleFavorite} aria-label="В избранное">
 							<Icon name={isFavorite ? 'bookmark' : 'bookmarkAdd'} size={20} />
 						</button>

@@ -1,11 +1,15 @@
 <script>
 	import { page } from '$app/stores';
 	import { userToken, notificationCount } from '$lib/stores';
+	import { siteSession, siteProfile } from '$lib/stores/auth';
 	import Icon from './Icon.svelte';
 
 	$: path = $page.url.pathname;
 	$: utoken = $userToken;
 	$: nCount = $notificationCount;
+	$: site = $siteSession;
+	// доступ к закладкам/истории: аккаунт Anixart ИЛИ аккаунт сайта
+	$: ok = (item) => !item.auth || utoken || (item.site && site);
 
 	const topItems = [
 		{ path: '/', icon: 'home', label: 'Главная' },
@@ -13,8 +17,8 @@
 		{ path: '/search', icon: 'search', label: 'Поиск' },
 		{ path: '/schedule', icon: 'schedule', label: 'Расписание' },
 		{ path: '/collections', icon: 'collection', label: 'Коллекции' },
-		{ path: '/bookmarks', icon: 'bookmark', label: 'Закладки', auth: true },
-		{ path: '/history', icon: 'history', label: 'История', auth: true },
+		{ path: '/bookmarks', icon: 'bookmark', label: 'Закладки', auth: true, site: true },
+		{ path: '/history', icon: 'history', label: 'История', auth: true, site: true },
 		{ path: '/friends', icon: 'friends', label: 'Друзья', auth: true }
 	];
 	const bottomItems = [
@@ -32,9 +36,15 @@
 		<img src="/favicon.svg" alt="AniShiki" />
 	</a>
 
-	<a href={utoken ? `/profile/${utoken.id}` : '/login'} class="avatar" title={utoken?.login || 'Войти'}>
+	<a
+		href={utoken ? `/profile/${utoken.id}` : site ? '/settings' : '/login'}
+		class="avatar"
+		title={utoken?.login || $siteProfile?.username || 'Войти'}
+	>
 		{#if utoken?.avatar}
 			<img src={utoken.avatar} alt="" referrerpolicy="no-referrer" />
+		{:else if $siteProfile?.avatar_url}
+			<img src={$siteProfile.avatar_url} alt="" referrerpolicy="no-referrer" />
 		{:else}
 			<Icon name="user" size={22} />
 		{/if}
@@ -44,7 +54,7 @@
 
 	<nav class="group">
 		{#each topItems as item}
-			{#if !item.auth || utoken}
+			{#if ok(item)}
 				<a href={item.path} class="item" class:active={isActive(item.path)} title={item.label}>
 					<Icon name={item.icon} size={22} />
 					<span class="tip">{item.label}</span>

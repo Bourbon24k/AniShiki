@@ -5,7 +5,16 @@
 	import { browser } from '$app/environment';
 	import { getApi } from '$lib/api';
 	import { userToken } from '$lib/stores';
+	import { siteSession } from '$lib/stores/auth';
+	import { listFavorites } from '$lib/sitedata';
 	import GridList from '$lib/components/GridList.svelte';
+
+	$: siteOnly = !$userToken && !!$siteSession;
+	let siteLoaded = false;
+	$: if (siteOnly && !siteLoaded) {
+		siteLoaded = true;
+		load(true);
+	}
 
 	// Категории-статусы важнее «избранного» — они идут первыми.
 	const cats = [
@@ -25,6 +34,13 @@
 	let hasMore = true;
 
 	async function load(reset = true) {
+		if (siteOnly) {
+			loading = true;
+			items = await listFavorites();
+			hasMore = false;
+			loading = false;
+			return;
+		}
 		if (!$userToken) {
 			loading = false;
 			return;
@@ -82,7 +98,11 @@
 <div class="page">
 	<h1>Закладки</h1>
 
-	{#if !$userToken}
+	{#if siteOnly}
+		<div class="list">
+			<GridList {items} {loading} {loadingMore} onMore={more} empty="В избранном пусто" />
+		</div>
+	{:else if !$userToken}
 		<div class="empty">
 			<p>Войдите, чтобы видеть закладки</p>
 			<a class="btn" href="/login">Войти</a>

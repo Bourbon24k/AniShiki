@@ -2,7 +2,16 @@
 	import { onMount } from 'svelte';
 	import { getApi } from '$lib/api';
 	import { userToken, showToast } from '$lib/stores';
+	import { siteSession } from '$lib/stores/auth';
+	import { listHistory } from '$lib/sitedata';
 	import GridList from '$lib/components/GridList.svelte';
+
+	$: siteOnly = !$userToken && !!$siteSession;
+	let siteLoaded = false;
+	$: if (siteOnly && !siteLoaded) {
+		siteLoaded = true;
+		load(true);
+	}
 
 	let items = [];
 	let pageNum = 0;
@@ -11,6 +20,13 @@
 	let hasMore = true;
 
 	async function load(reset = true) {
+		if (siteOnly) {
+			loading = true;
+			items = await listHistory();
+			hasMore = false;
+			loading = false;
+			return;
+		}
 		if (!$userToken) {
 			loading = false;
 			return;
@@ -44,7 +60,7 @@
 <svelte:head><title>История — AniShiki</title></svelte:head>
 <div class="page">
 	<h1>История просмотра</h1>
-	{#if !$userToken}
+	{#if !$userToken && !siteOnly}
 		<div class="empty"><p>Войдите, чтобы видеть историю</p><a class="btn" href="/login">Войти</a></div>
 	{:else}
 		<div class="list"><GridList {items} {loading} {loadingMore} onMore={more} empty="История пуста" /></div>
