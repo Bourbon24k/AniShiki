@@ -699,7 +699,7 @@
 										max={duration || 0}
 										step="0.1"
 										value={currentTime}
-										on:input={(e) => seekLocal(+e.target.value)}
+										on:input={(e) => seekLocal(+e.currentTarget.value)}
 									on:change={() => emitSync('seek')}
 									/>
 								</div>
@@ -727,7 +727,7 @@
 											step="0.05"
 											style="--p:{(muted ? 0 : volume) * 100}%"
 											value={muted ? 0 : volume}
-											on:input={(e) => setVol(+e.target.value)}
+											on:input={(e) => setVol(+e.currentTarget.value)}
 										/>
 									</div>
 
@@ -805,7 +805,7 @@
 
 							{#if $isHost}
 								<label class="co-toggle">
-									<input type="checkbox" checked={$hostOnly} on:change={(e) => setHostOnly(e.target.checked)} />
+									<input type="checkbox" checked={$hostOnly} on:change={(e) => setHostOnly(e.currentTarget.checked)} />
 									<span>Только я управляю</span>
 								</label>
 							{:else if $hostOnly}

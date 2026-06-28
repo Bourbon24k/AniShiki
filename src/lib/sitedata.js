@@ -19,6 +19,7 @@ export async function listFavorites() {
 	const { data } = await supabase
 		.from('favorites')
 		.select('*')
+		.eq('user_id', uid())
 		.order('created_at', { ascending: false });
 	return (data || []).map(toCard);
 }
@@ -55,13 +56,19 @@ export async function listHistory() {
 	const { data } = await supabase
 		.from('history')
 		.select('*')
+		.eq('user_id', uid())
 		.order('updated_at', { ascending: false });
 	return (data || []).map(toCard);
 }
 
-/** Сохранить/обновить позицию просмотра (включая точную секунду). */
+/**
+ * Сохранить/обновить позицию просмотра (включая точную секунду).
+ * @param {any} release
+ * @param {{ episodePosition?: number|null, sourceId?: number, dubberId?: number, seconds?: number, duration?: number }} [opts]
+ */
 export async function saveHistory(release, { episodePosition, sourceId, dubberId, seconds, duration } = {}) {
 	if (!supabase || !uid()) return;
+	/** @type {Record<string, any>} */
 	const row = {
 		user_id: uid(),
 		release_id: release.id,
@@ -95,6 +102,7 @@ export async function listContinue() {
 	const { data } = await supabase
 		.from('history')
 		.select('*')
+		.eq('user_id', uid())
 		.gt('seconds', 0)
 		.order('updated_at', { ascending: false })
 		.limit(20);
@@ -136,6 +144,7 @@ export async function listByStatus(status) {
 	const { data } = await supabase
 		.from('lists')
 		.select('*')
+		.eq('user_id', uid())
 		.eq('status', status)
 		.order('updated_at', { ascending: false });
 	return (data || []).map(toCard);
@@ -144,12 +153,14 @@ export async function listByStatus(status) {
 /** Счётчики по статусам + избранное + история (для профиля). */
 export async function counts() {
 	if (!supabase || !uid()) return {};
+	/** @type {Record<string, number>} */
 	const tally = { fav: 0, hist: 0, rated: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+	const u = uid();
 	const [lists, fav, hist, rated] = await Promise.all([
-		supabase.from('lists').select('status'),
-		supabase.from('favorites').select('release_id'),
-		supabase.from('history').select('release_id'),
-		supabase.from('ratings').select('release_id')
+		supabase.from('lists').select('status').eq('user_id', u),
+		supabase.from('favorites').select('release_id').eq('user_id', u),
+		supabase.from('history').select('release_id').eq('user_id', u),
+		supabase.from('ratings').select('release_id').eq('user_id', u)
 	]);
 	for (const r of lists.data || []) tally[r.status] = (tally[r.status] || 0) + 1;
 	tally.fav = (fav.data || []).length;
@@ -191,9 +202,10 @@ export async function setRating(release, vote) {
 /** Расширенная статистика просмотра (для профиля). */
 export async function watchStats() {
 	if (!supabase || !uid()) return { hours: 0, episodes: 0, avgRating: 0 };
+	const u = uid();
 	const [hist, rated] = await Promise.all([
-		supabase.from('history').select('seconds'),
-		supabase.from('ratings').select('vote')
+		supabase.from('history').select('seconds').eq('user_id', u),
+		supabase.from('ratings').select('vote').eq('user_id', u)
 	]);
 	const totalSec = (hist.data || []).reduce((s, r) => s + (r.seconds || 0), 0);
 	const votes = (rated.data || []).map((r) => r.vote);
@@ -217,7 +229,8 @@ export async function listComments(releaseId) {
 		.limit(200);
 	const rows = data || [];
 	const ids = [...new Set(rows.map((r) => r.user_id))];
-	let profs = {};
+	/** @type {Record<string, any>} */
+	const profs = {};
 	if (ids.length) {
 		const { data: ps } = await supabase.from('profiles').select('id, username, avatar_url').in('id', ids);
 		for (const p of ps || []) profs[p.id] = p;
@@ -264,8 +277,10 @@ export async function uploadAvatar(file) {
 	return data.publicUrl;
 }
 
+/** @param {{ username?: string, avatar_url?: string | null }} [opts] */
 export async function updateProfile({ username, avatar_url } = {}) {
 	if (!supabase || !uid()) throw new Error('Нет аккаунта');
+	/** @type {Record<string, any>} */
 	const patch = {};
 	if (username != null) patch.username = username;
 	if (avatar_url !== undefined) patch.avatar_url = avatar_url;

@@ -159,6 +159,7 @@
 
 	$: if (releaseId) load(releaseId);
 
+	/** @type {[string, (r: any) => any][]} */
 	const infoRows = [
 		['Студия', (r) => r.studio],
 		['Автор', (r) => r.author],

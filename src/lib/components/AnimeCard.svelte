@@ -4,6 +4,7 @@
 
 	export let anime;
 	export let type = 'grid'; // 'grid' | 'full-row' | 'poster'
+	/** @type {number | null} */
 	export let index = null;
 
 	$: status = getStatusInfo(anime?.status);

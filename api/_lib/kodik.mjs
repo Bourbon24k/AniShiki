@@ -16,6 +16,7 @@ let dispatcher = null;
 if (process.env.KODIK_PROXY) {
 	try {
 		const pu = new URL(process.env.KODIK_PROXY);
+		/** @type {import('socks').SocksProxy} */
 		const proxy = {
 			host: pu.hostname,
 			port: Number(pu.port) || 1080,
@@ -39,12 +40,12 @@ if (process.env.KODIK_PROXY) {
 								{ socket, servername: opts.servername || opts.hostname },
 								() => cb(null, t)
 							);
-							t.on('error', cb);
+							t.on('error', (e) => cb(e, null));
 						} else {
 							cb(null, socket);
 						}
 					})
-					.catch(cb);
+					.catch((e) => cb(e, null));
 			}
 		});
 	} catch (e) {
@@ -121,9 +122,10 @@ export async function extractKodik(embedUrl) {
 		body
 	});
 	if (!ftor.ok) throw new Error('ftor ' + ftor.status);
-	const data = await ftor.json();
+	const data = /** @type {any} */ (await ftor.json());
 
 	const links = data.links || {};
+	/** @type {Record<string, string>} */
 	const qualities = {};
 	for (const q of Object.keys(links)) {
 		const v = links[q];

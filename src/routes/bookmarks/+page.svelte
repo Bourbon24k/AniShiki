@@ -26,7 +26,7 @@
 		{ key: 'fav', label: 'Избранное' }
 	];
 
-	let active = 1;
+	let active = /** @type {number | 'fav'} */ (1);
 	let items = [];
 	let pageNum = 0;
 	let loading = true;
