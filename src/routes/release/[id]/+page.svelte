@@ -25,6 +25,7 @@
 	import AnimeCard from '$lib/components/AnimeCard.svelte';
 	import BookmarkButton from '$lib/components/BookmarkButton.svelte';
 	import Comments from '$lib/components/Comments.svelte';
+	import SiteComments from '$lib/components/SiteComments.svelte';
 	import Lightbox from '$lib/components/Lightbox.svelte';
 
 	$: releaseId = Number($page.params.id);
@@ -342,7 +343,11 @@
 				</section>
 			{/if}
 
-			<Comments {releaseId} />
+			{#if $siteSession}
+				<SiteComments releaseId={release.id} />
+			{:else}
+				<Comments {releaseId} />
+			{/if}
 		</div>
 	</div>
 

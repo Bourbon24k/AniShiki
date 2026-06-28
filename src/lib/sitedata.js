@@ -205,6 +205,48 @@ export async function watchStats() {
 	};
 }
 
+// ── Комментарии сайта (видны пользователям сайта) ──
+
+export async function listComments(releaseId) {
+	if (!supabase) return [];
+	const { data } = await supabase
+		.from('comments')
+		.select('*')
+		.eq('release_id', releaseId)
+		.order('created_at', { ascending: false })
+		.limit(200);
+	const rows = data || [];
+	const ids = [...new Set(rows.map((r) => r.user_id))];
+	let profs = {};
+	if (ids.length) {
+		const { data: ps } = await supabase.from('profiles').select('id, username, avatar_url').in('id', ids);
+		for (const p of ps || []) profs[p.id] = p;
+	}
+	return rows.map((r) => ({
+		id: r.id,
+		user_id: r.user_id,
+		text: r.text,
+		created_at: r.created_at,
+		author: profs[r.user_id] || { username: 'Пользователь' }
+	}));
+}
+
+export async function addComment(releaseId, text) {
+	if (!supabase || !uid()) throw new Error('Нет аккаунта');
+	const { data, error } = await supabase
+		.from('comments')
+		.insert({ user_id: uid(), release_id: releaseId, text })
+		.select()
+		.single();
+	if (error) throw error;
+	return data;
+}
+
+export async function deleteComment(id) {
+	if (!supabase || !uid()) return;
+	await supabase.from('comments').delete().eq('id', id).eq('user_id', uid());
+}
+
 // ── Профиль ──
 
 /** Загрузить файл аватара в Storage и вернуть публичный URL. */

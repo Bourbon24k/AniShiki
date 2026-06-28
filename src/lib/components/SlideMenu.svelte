@@ -1,11 +1,14 @@
 <script>
 	import { mobileMenuOpen, userToken } from '$lib/stores';
+	import { siteSession, siteProfile } from '$lib/stores/auth';
 	import { page } from '$app/stores';
 	import { slide, fade } from 'svelte/transition';
 	import Icon from './Icon.svelte';
 
 	$: open = $mobileMenuOpen;
 	$: utoken = $userToken;
+	$: site = $siteSession;
+	$: loggedIn = !!utoken || !!site;
 	$: path = $page.url.pathname;
 
 	const items = [
@@ -14,11 +17,12 @@
 		{ href: '/search', label: 'Поиск', icon: 'search' },
 		{ href: '/schedule', label: 'Расписание', icon: 'schedule' },
 		{ href: '/collections', label: 'Коллекции', icon: 'collection' },
-		{ href: '/bookmarks', label: 'Закладки', icon: 'bookmark', auth: true },
-		{ href: '/history', label: 'История', icon: 'history', auth: true },
-		{ href: '/friends', label: 'Друзья', icon: 'friends', auth: true },
+		{ href: '/bookmarks', label: 'Закладки', icon: 'bookmark', auth: true, site: true },
+		{ href: '/history', label: 'История', icon: 'history', auth: true, site: true },
+		{ href: '/friends', label: 'Друзья', icon: 'friends', auth: true, site: true },
 		{ href: '/settings', label: 'Настройки', icon: 'settings' }
 	];
+	$: ok = (item) => !item.auth || utoken || (item.site && site);
 	const close = () => mobileMenuOpen.set(false);
 </script>
 
@@ -39,13 +43,22 @@
 				{/if}
 				<span class="name">{utoken.login}</span>
 			</a>
+		{:else if site}
+			<a href="/me" class="user" on:click={close}>
+				{#if $siteProfile?.avatar_url}
+					<img src={$siteProfile.avatar_url} alt="" referrerpolicy="no-referrer" />
+				{:else}
+					<span class="ph"><Icon name="user" /></span>
+				{/if}
+				<span class="name">{$siteProfile?.username || 'Профиль'}</span>
+			</a>
 		{:else}
 			<a href="/login" class="login" on:click={close}>Войти в аккаунт</a>
 		{/if}
 
 		<div class="list">
 			{#each items as item}
-				{#if !item.auth || utoken}
+				{#if ok(item)}
 					<a href={item.href} class="row" class:active={path === item.href} on:click={close}>
 						<Icon name={item.icon} size={22} /><span>{item.label}</span>
 					</a>
