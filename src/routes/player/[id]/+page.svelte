@@ -65,25 +65,45 @@
 	let hideTimer;
 	let lastAttached = '';
 	let pendingSeek = 0;
-	// «Продолжить с секунды» (site-аккаунт)
+	// «Продолжить с секунды» — для всех (localStorage) + кросс-девайс для site-аккаунта (Supabase)
 	let resumeSec = 0;
 	let resumeEp = null;
 	let resumeApplied = false;
 	let lastProgressSave = 0;
 
+	const progressKey = () => `progress:${releaseId}`;
+	function readLocalProgress() {
+		try {
+			return JSON.parse(localStorage.getItem(progressKey()) || 'null');
+		} catch {
+			return null;
+		}
+	}
+
 	function saveProgress(force = false) {
-		if ($userToken || !$siteSession || $playingSettings.disableHistory) return;
-		if (!videoEl || !release || !selectedEpisode) return;
+		if ($playingSettings.disableHistory) return;
+		if (!videoEl || !release || !selectedEpisode || !videoEl.currentTime) return;
 		const now = Date.now();
 		if (!force && now - lastProgressSave < 10000) return;
 		lastProgressSave = now;
-		saveHistory(release, {
-			episodePosition: epPos(selectedEpisode),
-			sourceId: selectedSource?.id,
-			dubberId: selectedDubber?.id,
-			seconds: videoEl.currentTime,
-			duration: videoEl.duration
-		}).catch(() => {});
+		const pos = epPos(selectedEpisode);
+		// локально — для всех (в т.ч. гостей и Anixart), быстрый resume на этом устройстве
+		try {
+			localStorage.setItem(
+				progressKey(),
+				JSON.stringify({ ep: pos, sec: Math.floor(videoEl.currentTime), dur: Math.floor(videoEl.duration || 0) })
+			);
+		} catch {}
+		// кросс-девайс — только аккаунт сайта (Supabase)
+		if (!$userToken && $siteSession) {
+			saveHistory(release, {
+				episodePosition: pos,
+				sourceId: selectedSource?.id,
+				dubberId: selectedDubber?.id,
+				seconds: videoEl.currentTime,
+				duration: videoEl.duration
+			}).catch(() => {});
+		}
 	}
 
 	// Совместный просмотр
@@ -218,6 +238,15 @@
 		emitSync('seek');
 		showControlsTemp();
 	}
+	function skipIntro() {
+		skip(85);
+	}
+	function skipEnding() {
+		nextEp();
+	}
+	// Кнопки пропуска (нет тайм-кодов от Kodik → эвристика по времени)
+	$: showSkipIntro = mode !== 'iframe' && duration > 120 && currentTime > 4 && currentTime < 110 && !buffering && !paused;
+	$: showSkipEnding = mode !== 'iframe' && duration > 0 && currentTime > duration - 150 && currentTime < duration - 2 && canNext && !buffering;
 	function setVol(v) {
 		if (!videoEl) return;
 		videoEl.volume = v;
@@ -273,15 +302,22 @@
 		try {
 			const data = await api.release.info(releaseId, true);
 			release = data?.release;
-			// «Продолжить с секунды» для аккаунта сайта
-			if (!$userToken && $siteSession) {
-				try {
-					const h = await getHistoryEntry(releaseId);
-					if (h?.seconds > 5) {
-						resumeSec = h.seconds;
-						resumeEp = h.episode_position;
-					}
-				} catch {}
+			// «Продолжить с секунды»: локально для всех, кросс-девайс для site-аккаунта
+			if (!$playingSettings.disableHistory) {
+				const local = readLocalProgress();
+				if (local?.sec > 5) {
+					resumeSec = local.sec;
+					resumeEp = local.ep;
+				}
+				if (!$userToken && $siteSession) {
+					try {
+						const h = await getHistoryEntry(releaseId);
+						if (h?.seconds > 5) {
+							resumeSec = h.seconds;
+							resumeEp = h.episode_position;
+						}
+					} catch {}
+				}
 			}
 			await loadDubbers();
 		} catch (e) {
@@ -302,6 +338,9 @@
 	}
 
 	async function selectDubber(dub) {
+		// сохраняем текущую серию и секунду при смене озвучки
+		const keepPos = epPos(selectedEpisode);
+		const keepTime = videoEl?.currentTime || 0;
 		selectedDubber = dub;
 		sources = [];
 		episodes = [];
@@ -311,13 +350,13 @@
 			sources = s?.sources || [];
 			const pref = $playingSettings.defaultSource;
 			const chosen = sources.find((x) => x.id === pref) || sources[0];
-			if (chosen) await selectSource(chosen);
+			if (chosen) await selectSource(chosen, keepPos, keepTime);
 		} catch (e) {
 			console.error('sources', e);
 		}
 	}
 
-	async function selectSource(src) {
+	async function selectSource(src, keepPos = epPos(selectedEpisode), keepTime = videoEl?.currentTime || 0) {
 		selectedSource = src;
 		episodes = [];
 		videoUrl = '';
@@ -333,7 +372,10 @@
 				return ap - bp;
 			});
 			episodes = list;
-			if (episodes.length) await selectEpisode(episodes[0]);
+			// та же серия, что смотрели (а не всегда первая)
+			const target = (keepPos != null && episodes.find((e) => epPos(e) === keepPos)) || episodes[0];
+			if (keepTime > 0) pendingSeek = keepTime;
+			if (target) await selectEpisode(target);
 		} catch (e) {
 			console.error('episodes', e);
 		}
@@ -620,6 +662,16 @@
 						{:else if paused}
 							<button class="big-play" on:click|stopPropagation={togglePlay} aria-label="Воспроизвести">
 								<Icon name="play" size={38} />
+							</button>
+						{/if}
+
+						{#if showSkipIntro}
+							<button class="skip-btn" on:click|stopPropagation={skipIntro}>
+								Пропустить опенинг <Icon name="chevronRight" size={16} />
+							</button>
+						{:else if showSkipEnding}
+							<button class="skip-btn" on:click|stopPropagation={skipEnding}>
+								Следующая серия <Icon name="chevronRight" size={16} />
 							</button>
 						{/if}
 
@@ -946,6 +998,42 @@
 	.big-play:hover {
 		transform: translate(-50%, -50%) scale(1.07);
 		background: var(--primary-color);
+	}
+
+	/* кнопки пропуска опенинга/эндинга */
+	.skip-btn {
+		position: absolute;
+		right: 24px;
+		bottom: 92px;
+		z-index: 3;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 11px 18px;
+		border-radius: 12px;
+		border: 1px solid rgba(255, 255, 255, 0.25);
+		background: rgba(20, 20, 24, 0.72);
+		backdrop-filter: blur(8px);
+		color: #fff;
+		font-weight: 700;
+		font-size: 14px;
+		cursor: pointer;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+		transition: background 0.15s ease, transform 0.15s ease;
+		animation: fadeInUp 0.3s ease;
+	}
+	.skip-btn:hover {
+		background: var(--primary-color);
+		border-color: transparent;
+		transform: translateY(-2px);
+	}
+	@media (max-width: 768px) {
+		.skip-btn {
+			right: 14px;
+			bottom: 84px;
+			padding: 9px 14px;
+			font-size: 13px;
+		}
 	}
 
 	/* оверлей контролов */
