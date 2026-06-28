@@ -47,10 +47,11 @@
 	let panelOpen = true;
 	let forceIframe = false; // принудительно встроенный плеер (если extract ломается)
 
-	function toggleForceIframe() {
-		forceIframe = !forceIframe;
+	function setIframe(val) {
+		if (forceIframe === val) return;
+		forceIframe = val;
 		try {
-			localStorage.setItem('force_iframe', forceIframe ? '1' : '0');
+			localStorage.setItem('force_iframe', val ? '1' : '0');
 		} catch {}
 		settingsOpen = false;
 		loadVideo();
@@ -833,11 +834,10 @@
 													</div>
 												</div>
 												<div class="msec">
-													<span class="mlabel">Источник</span>
+													<span class="mlabel">Плеер</span>
 													<div class="mopts">
-														<button class:active={forceIframe} on:click={toggleForceIframe}>
-															{forceIframe ? 'Встроенный (вкл)' : 'Встроенный плеер'}
-														</button>
+														<button class:active={!forceIframe} on:click={() => setIframe(false)}>Без рекламы</button>
+														<button class:active={forceIframe} on:click={() => setIframe(true)}>Встроенный</button>
 													</div>
 												</div>
 											</div>
@@ -951,10 +951,16 @@
 			</div>
 
 			<div class="group">
-				<label class="opt-row">
-					<input type="checkbox" checked={forceIframe} on:change={toggleForceIframe} />
-					<span>Встроенный плеер (если прямой поток не грузится)</span>
-				</label>
+				<h3>Плеер</h3>
+				<div class="seg">
+					<button class="seg-btn" class:active={!forceIframe} on:click={() => setIframe(false)}>
+						⚡ Без рекламы
+					</button>
+					<button class="seg-btn" class:active={forceIframe} on:click={() => setIframe(true)}>
+						Встроенный
+					</button>
+				</div>
+				<p class="seg-hint">«Встроенный» — плеер Kodik с рекламой; включите, если прямой поток не грузится.</p>
 			</div>
 		</aside>
 	</div>
@@ -1172,20 +1178,35 @@
 			bottom: 84px;
 		}
 	}
-	.opt-row {
+	.seg {
 		display: flex;
-		align-items: center;
-		gap: 10px;
-		font-size: 13px;
-		color: var(--secondary-text-color);
-		cursor: pointer;
-		line-height: 1.4;
+		gap: 4px;
+		padding: 4px;
+		border-radius: 12px;
+		background: var(--background-color);
+		border: 1px solid var(--glass-border);
 	}
-	.opt-row input {
-		width: 16px;
-		height: 16px;
-		min-width: 16px;
-		accent-color: var(--primary-color);
+	.seg-btn {
+		flex: 1;
+		padding: 9px 10px;
+		border: none;
+		background: transparent;
+		color: var(--secondary-text-color);
+		border-radius: 9px;
+		cursor: pointer;
+		font-size: 13px;
+		font-weight: 700;
+		transition: background 0.15s ease, color 0.15s ease;
+	}
+	.seg-btn.active {
+		background: var(--primary-color);
+		color: #fff;
+	}
+	.seg-hint {
+		margin-top: 8px;
+		font-size: 12px;
+		line-height: 1.4;
+		color: var(--third-text-color);
 	}
 
 	/* оверлей контролов */
