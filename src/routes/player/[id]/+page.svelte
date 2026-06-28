@@ -75,10 +75,9 @@
 	let hideTimer;
 	let lastAttached = '';
 	let pendingSeek = 0;
-	// «Продолжить с секунды» — для всех (localStorage) + кросс-девайс для site-аккаунта (Supabase)
-	let resumeSec = 0;
-	let resumeEp = null;
-	let resumeApplied = false;
+	// «Продолжить с секунды» — одноразовая цель на старте: { ep, sec } | null.
+	// Потребляется при первом выборе источника, чтобы ручной переход по сериям не сикал.
+	let pendingResume = null;
 	let lastProgressSave = 0;
 
 	const progressKey = () => `progress:${releaseId}`;
@@ -341,17 +340,11 @@
 			// (?fresh=1 со страницы релиза — смотреть с начала)
 			if (!$playingSettings.disableHistory && !$page.url.searchParams.get('fresh')) {
 				const local = readLocalProgress();
-				if (local?.sec > 5) {
-					resumeSec = local.sec;
-					resumeEp = local.ep;
-				}
+				if (local?.sec > 5) pendingResume = { ep: local.ep, sec: local.sec };
 				if (!$userToken && $siteSession) {
 					try {
 						const h = await getHistoryEntry(releaseId);
-						if (h?.seconds > 5) {
-							resumeSec = h.seconds;
-							resumeEp = h.episode_position;
-						}
+						if (h?.seconds > 5) pendingResume = { ep: h.episode_position, sec: h.seconds };
 					} catch {}
 				}
 			}
@@ -424,8 +417,17 @@
 				return ap - bp;
 			});
 			episodes = list;
-			// та же серия, что смотрели (а не всегда первая)
-			const target = (keepPos != null && episodes.find((e) => epPos(e) === keepPos)) || episodes[0];
+			// приоритет: та же серия при смене озвучки → сохранённая (resume) → первая
+			let target = keepPos != null ? episodes.find((e) => epPos(e) === keepPos) : null;
+			if (!target && pendingResume) {
+				const re = episodes.find((e) => epPos(e) === pendingResume.ep);
+				if (re) {
+					target = re;
+					pendingSeek = pendingResume.sec;
+				}
+			}
+			pendingResume = null; // одноразово: дальше ручная навигация стартует с 0
+			if (!target) target = episodes[0];
 			if (keepTime > 0) pendingSeek = keepTime;
 			if (target) await selectEpisode(target);
 		} catch (e) {
@@ -455,6 +457,15 @@
 	async function loadVideo() {
 		if (!selectedEpisode) return;
 		loadingVideo = true;
+		// сброс позиции: иначе bind:currentTime пушит старую секунду в новый источник
+		currentTime = 0;
+		duration = 0;
+		if (videoEl) {
+			try {
+				videoEl.removeAttribute('src');
+				videoEl.load();
+			} catch {}
+		}
 		videoUrl = '';
 		lastAttached = '';
 		qualities = {};
@@ -519,13 +530,9 @@
 	async function attachDirect(url) {
 		if (!videoEl) return;
 		videoEl.playbackRate = rate;
-		// позиция для перемотки: смена качества или «продолжить с секунды»
-		let seekTarget = pendingSeek;
+		// позиция: смена качества/озвучки или одноразовый resume (pendingSeek уже выставлен)
+		const seekTarget = pendingSeek;
 		pendingSeek = 0;
-		if (!seekTarget && !resumeApplied && resumeSec > 5 && epPos(selectedEpisode) === resumeEp) {
-			seekTarget = resumeSec;
-			resumeApplied = true;
-		}
 		if (seekTarget > 0) {
 			const t = seekTarget;
 			const onmeta = () => {
