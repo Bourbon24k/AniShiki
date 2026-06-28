@@ -45,6 +45,16 @@
 	let loadingEpisodes = false;
 	let loadingVideo = false;
 	let panelOpen = true;
+	let forceIframe = false; // принудительно встроенный плеер (если extract ломается)
+
+	function toggleForceIframe() {
+		forceIframe = !forceIframe;
+		try {
+			localStorage.setItem('force_iframe', forceIframe ? '1' : '0');
+		} catch {}
+		settingsOpen = false;
+		loadVideo();
+	}
 
 	let videoEl;
 	let stageEl;
@@ -273,8 +283,26 @@
 		clearTimeout(hideTimer);
 		if (!paused && !settingsOpen) hideTimer = setTimeout(() => (controlsVisible = false), 2800);
 	}
+	// Автопереход к следующей серии с отсчётом
+	let autoNextLeft = 0;
+	let autoNextTimer = null;
 	function onEnded() {
-		if (canNext) nextEp();
+		if (!canNext) return;
+		saveProgress(true);
+		autoNextLeft = 5;
+		clearInterval(autoNextTimer);
+		autoNextTimer = setInterval(() => {
+			autoNextLeft -= 1;
+			if (autoNextLeft <= 0) {
+				cancelAutoNext();
+				nextEp();
+			}
+		}, 1000);
+	}
+	function cancelAutoNext() {
+		clearInterval(autoNextTimer);
+		autoNextTimer = null;
+		autoNextLeft = 0;
 	}
 
 	function epPos(ep) {
@@ -303,7 +331,8 @@
 			const data = await api.release.info(releaseId, true);
 			release = data?.release;
 			// «Продолжить с секунды»: локально для всех, кросс-девайс для site-аккаунта
-			if (!$playingSettings.disableHistory) {
+			// (?fresh=1 со страницы релиза — смотреть с начала)
+			if (!$playingSettings.disableHistory && !$page.url.searchParams.get('fresh')) {
 				const local = readLocalProgress();
 				if (local?.sec > 5) {
 					resumeSec = local.sec;
@@ -327,17 +356,32 @@
 		loading = false;
 	}
 
+	// Память выбранной озвучки/источника по релизу
+	const prefKey = () => `pref:${releaseId}`;
+	function savePref() {
+		if (!selectedDubber || !selectedSource) return;
+		try {
+			localStorage.setItem(prefKey(), JSON.stringify({ dubberId: selectedDubber.id, sourceId: selectedSource.id }));
+		} catch {}
+	}
+
 	async function loadDubbers() {
 		try {
 			const d = await getApi().release.getDubbers(releaseId);
 			dubbers = d?.types || d?.dubbers || [];
-			if (dubbers.length) await selectDubber(dubbers[0]);
+			if (!dubbers.length) return;
+			let pref = null;
+			try {
+				pref = JSON.parse(localStorage.getItem(prefKey()) || 'null');
+			} catch {}
+			const dub = (pref && dubbers.find((x) => x.id === pref.dubberId)) || dubbers[0];
+			await selectDubber(dub, pref?.sourceId);
 		} catch (e) {
 			console.error('dubbers', e);
 		}
 	}
 
-	async function selectDubber(dub) {
+	async function selectDubber(dub, prefSourceId = null) {
 		// сохраняем текущую серию и секунду при смене озвучки
 		const keepPos = epPos(selectedEpisode);
 		const keepTime = videoEl?.currentTime || 0;
@@ -348,7 +392,7 @@
 		try {
 			const s = await getApi().release.getDubberSources(releaseId, dub.id);
 			sources = s?.sources || [];
-			const pref = $playingSettings.defaultSource;
+			const pref = prefSourceId ?? $playingSettings.defaultSource;
 			const chosen = sources.find((x) => x.id === pref) || sources[0];
 			if (chosen) await selectSource(chosen, keepPos, keepTime);
 		} catch (e) {
@@ -358,6 +402,7 @@
 
 	async function selectSource(src, keepPos = epPos(selectedEpisode), keepTime = videoEl?.currentTime || 0) {
 		selectedSource = src;
+		savePref();
 		episodes = [];
 		videoUrl = '';
 		loadingEpisodes = true;
@@ -383,6 +428,7 @@
 	}
 
 	async function selectEpisode(ep) {
+		cancelAutoNext();
 		selectedEpisode = ep;
 		await loadVideo();
 		emitSync('episode');
@@ -413,7 +459,10 @@
 			if (u.startsWith('//')) u = `https:${u}`;
 			else if (u && !u.startsWith('http')) u = `https://${u}`;
 
-			if (isKodik(u)) {
+			if (forceIframe) {
+				mode = 'iframe';
+				videoUrl = u;
+			} else if (isKodik(u)) {
 				// Достаём прямой m3u8 через серверный эндпоинт → играем без рекламы.
 				try {
 					const r = await fetch(`/api/kodik?url=${encodeURIComponent(u)}`);
@@ -571,6 +620,7 @@
 	onMount(() => {
 		try {
 			coName = currentSiteName() || localStorage.getItem('cowatch_name') || '';
+			forceIframe = localStorage.getItem('force_iframe') === '1';
 		} catch {
 			coName = currentSiteName() || '';
 		}
@@ -582,6 +632,7 @@
 	});
 	onDestroy(() => {
 		saveProgress(true);
+		cancelAutoNext();
 		destroyHls();
 		clearTimeout(hideTimer);
 		leaveRoom();
@@ -665,7 +716,15 @@
 							</button>
 						{/if}
 
-						{#if showSkipIntro}
+						{#if autoNextLeft > 0}
+							<div class="autonext" on:click|stopPropagation>
+								<span>Следующая серия через {autoNextLeft}…</span>
+								<div class="an-actions">
+									<button class="an-go" on:click={() => { cancelAutoNext(); nextEp(); }}>Сейчас</button>
+									<button class="an-cancel" on:click={cancelAutoNext}>Отмена</button>
+								</div>
+							</div>
+						{:else if showSkipIntro}
 							<button class="skip-btn" on:click|stopPropagation={skipIntro}>
 								Пропустить опенинг <Icon name="chevronRight" size={16} />
 							</button>
@@ -757,6 +816,14 @@
 														{#each [0.5, 0.75, 1, 1.25, 1.5, 2] as r}
 															<button class:active={r === rate} on:click={() => setRate(r)}>{r}×</button>
 														{/each}
+													</div>
+												</div>
+												<div class="msec">
+													<span class="mlabel">Источник</span>
+													<div class="mopts">
+														<button class:active={forceIframe} on:click={toggleForceIframe}>
+															{forceIframe ? 'Встроенный (вкл)' : 'Встроенный плеер'}
+														</button>
 													</div>
 												</div>
 											</div>
@@ -867,6 +934,13 @@
 						{/each}
 					</div>
 				{/if}
+			</div>
+
+			<div class="group">
+				<label class="opt-row">
+					<input type="checkbox" checked={forceIframe} on:change={toggleForceIframe} />
+					<span>Встроенный плеер (если прямой поток не грузится)</span>
+				</label>
 			</div>
 		</aside>
 	</div>
@@ -1034,6 +1108,70 @@
 			padding: 9px 14px;
 			font-size: 13px;
 		}
+	}
+
+	/* автопереход к след. серии */
+	.autonext {
+		position: absolute;
+		right: 24px;
+		bottom: 92px;
+		z-index: 4;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 16px 18px;
+		border-radius: 14px;
+		background: rgba(18, 18, 22, 0.9);
+		backdrop-filter: blur(10px);
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+		color: #fff;
+		font-weight: 600;
+		font-size: 14px;
+		animation: fadeInUp 0.3s ease;
+	}
+	.an-actions {
+		display: flex;
+		gap: 8px;
+	}
+	.an-go,
+	.an-cancel {
+		flex: 1;
+		padding: 8px 14px;
+		border-radius: 10px;
+		border: none;
+		cursor: pointer;
+		font-weight: 700;
+		font-size: 13px;
+	}
+	.an-go {
+		background: var(--primary-color);
+		color: #fff;
+	}
+	.an-cancel {
+		background: rgba(255, 255, 255, 0.12);
+		color: #fff;
+	}
+	@media (max-width: 768px) {
+		.autonext {
+			right: 14px;
+			bottom: 84px;
+		}
+	}
+	.opt-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		font-size: 13px;
+		color: var(--secondary-text-color);
+		cursor: pointer;
+		line-height: 1.4;
+	}
+	.opt-row input {
+		width: 16px;
+		height: 16px;
+		min-width: 16px;
+		accent-color: var(--primary-color);
 	}
 
 	/* оверлей контролов */

@@ -106,7 +106,6 @@
 		overflow: hidden;
 		display: grid;
 		place-items: center;
-		box-shadow: 0 6px 20px var(--primary-glow);
 		transition: transform 0.2s ease;
 	}
 	.logo img {
@@ -175,7 +174,6 @@
 	.item.active {
 		color: #fff;
 		background: var(--primary-color);
-		box-shadow: 0 6px 18px var(--primary-glow);
 	}
 
 	.ico-wrap {

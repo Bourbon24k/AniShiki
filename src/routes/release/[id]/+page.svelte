@@ -10,7 +10,8 @@
 		removeFavorite as siteRemoveFav,
 		getListStatus as siteGetListStatus,
 		getRating as siteGetRating,
-		setRating as siteSetRating
+		setRating as siteSetRating,
+		getHistoryEntry as siteHistoryEntry
 	} from '$lib/sitedata';
 	import {
 		returnEpisodeString,
@@ -39,6 +40,16 @@
 	let listStatus = 0;
 	let myVote = 0;
 	let descExpanded = false;
+	let resume = null; // { sec, ep } — сохранённая позиция просмотра
+
+	function fmtTime(s) {
+		s = Math.floor(s || 0);
+		const h = Math.floor(s / 3600);
+		const m = Math.floor((s % 3600) / 60);
+		const sec = s % 60;
+		const mm = h ? String(m).padStart(2, '0') : String(m);
+		return `${h ? h + ':' : ''}${mm}:${String(sec).padStart(2, '0')}`;
+	}
 
 	// Галерея скриншотов
 	let lbOpen = false;
@@ -94,6 +105,17 @@
 			isFavorite = !!release.is_favorite;
 			listStatus = release.profile_list_status || 0;
 			myVote = release.your_vote || 0;
+			// Позиция просмотра: локально для всех, кросс-девайс для site-аккаунта
+			try {
+				const local = JSON.parse(localStorage.getItem(`progress:${release.id}`) || 'null');
+				if (local?.sec > 5) resume = { sec: local.sec, ep: local.ep };
+			} catch {}
+			if (!$userToken && $siteSession) {
+				try {
+					const h = await siteHistoryEntry(release.id);
+					if (h?.seconds > 5) resume = { sec: h.seconds, ep: h.episode_position };
+				} catch {}
+			}
 			// Для аккаунта сайта (без Anixart) — избранное/список/оценка из Supabase
 			if (!$userToken && $siteSession) {
 				[isFavorite, listStatus, myVote] = await Promise.all([
@@ -221,7 +243,14 @@
 					</div>
 
 					<div class="actions">
-						<a class="btn primary" href={`/player/${release.id}`}><Icon name="play" size={20} /> Смотреть</a>
+						{#if resume}
+							<a class="btn primary" href={`/player/${release.id}`}>
+								<Icon name="play" size={20} /> Продолжить с {fmtTime(resume.sec)}{#if resume.ep} · сер. {resume.ep}{/if}
+							</a>
+							<a class="btn ghost" href={`/player/${release.id}?fresh=1`}>С начала</a>
+						{:else}
+							<a class="btn primary" href={`/player/${release.id}`}><Icon name="play" size={20} /> Смотреть</a>
+						{/if}
 						{#if $userToken || $siteSession}<BookmarkButton releaseId={release.id} {release} bind:status={listStatus} />{/if}
 						<button class="icon-btn" class:fav={isFavorite} on:click={toggleFavorite} aria-label="В избранное">
 							<Icon name={isFavorite ? 'bookmark' : 'bookmarkAdd'} size={20} />
@@ -532,6 +561,11 @@
 		color: #fff;
 		background: var(--primary-color);
 		box-shadow: 0 8px 24px var(--primary-glow);
+	}
+	.btn.ghost {
+		color: var(--text-color);
+		background: var(--elevated-color);
+		border: 1px solid var(--glass-border);
 	}
 	.icon-btn {
 		width: 48px;
