@@ -12,6 +12,7 @@
 		respondRequest,
 		removeFriend
 	} from '$lib/friends';
+	import { friendsActivity } from '$lib/sitedata';
 	import Icon from '$lib/components/Icon.svelte';
 	import ProfileGrid from '$lib/components/ProfileGrid.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
@@ -25,6 +26,7 @@
 	let sFriends = [];
 	let sIncoming = [];
 	let sOutgoing = [];
+	let feed = [];
 	let query = '';
 	let results = [];
 	let searching = false;
@@ -37,12 +39,28 @@
 
 	async function loadSite() {
 		loading = true;
-		[sFriends, sIncoming, sOutgoing] = await Promise.all([
+		[sFriends, sIncoming, sOutgoing, feed] = await Promise.all([
 			listFriends(),
 			listIncoming(),
-			listOutgoing()
+			listOutgoing(),
+			friendsActivity()
 		]);
 		loading = false;
+	}
+
+	const actVerb = { watch: 'смотрит', rate: 'оценил(а)', list: 'обновил(а) список' };
+	function actText(a) {
+		if (a.type === 'rate') return `оценил(а) на ${a.meta}/10`;
+		if (a.type === 'list') return a.meta || 'обновил(а) список';
+		if (a.type === 'watch') return `смотрит${a.meta ? ' · ' + a.meta : ''}`;
+		return actVerb[a.type] || '';
+	}
+	function ago(ts) {
+		const d = (Date.now() - new Date(ts).getTime()) / 1000;
+		if (d < 60) return 'только что';
+		if (d < 3600) return `${Math.floor(d / 60)} мин назад`;
+		if (d < 86400) return `${Math.floor(d / 3600)} ч назад`;
+		return `${Math.floor(d / 86400)} дн назад`;
 	}
 
 	let searchTimer;
@@ -171,6 +189,26 @@
 			{#if loading}
 				<Spinner center label="Загрузка…" />
 			{:else}
+				{#if feed.length}
+					<section>
+						<h2>Активность друзей</h2>
+						<div class="feed">
+							{#each feed as a (a.id)}
+								<a class="act" href={`/release/${a.release_id}`}>
+									<div class="act-av">
+										{#if a.author?.avatar_url}<img src={a.author.avatar_url} alt="" referrerpolicy="no-referrer" />{:else}<Icon name="user" size={16} />{/if}
+									</div>
+									{#if a.image}<img class="act-poster" src={a.image} alt="" referrerpolicy="no-referrer" loading="lazy" />{/if}
+									<div class="act-body">
+										<span class="act-text"><b>{a.author?.username}</b> {actText(a)} <b>{a.title}</b></span>
+										<span class="act-time">{ago(a.created_at)}</span>
+									</div>
+								</a>
+							{/each}
+						</div>
+					</section>
+				{/if}
+
 				{#if sIncoming.length}
 					<section>
 						<h2>Заявки в друзья <span class="cnt">{sIncoming.length}</span></h2>
@@ -364,6 +402,62 @@
 	.muted {
 		color: var(--secondary-text-color);
 		margin-bottom: 24px;
+	}
+	.feed {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.act {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 10px 14px;
+		border-radius: 12px;
+		background: var(--alt-background-color);
+		border: 1px solid var(--glass-border);
+		color: inherit;
+	}
+	.act:hover {
+		border-color: var(--primary-color);
+	}
+	.act-av {
+		width: 34px;
+		height: 34px;
+		min-width: 34px;
+		border-radius: 50%;
+		overflow: hidden;
+		display: grid;
+		place-items: center;
+		background: var(--elevated-color);
+		color: var(--third-text-color);
+	}
+	.act-av img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+	.act-poster {
+		width: 34px;
+		height: 48px;
+		min-width: 34px;
+		border-radius: 6px;
+		object-fit: cover;
+	}
+	.act-body {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.act-text {
+		font-size: 14px;
+		line-height: 1.4;
+	}
+	.act-time {
+		font-size: 12px;
+		color: var(--third-text-color);
 	}
 	.auth-needed {
 		text-align: center;

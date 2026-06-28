@@ -137,6 +137,7 @@ export async function setListStatus(release, status) {
 		updated_at: new Date().toISOString()
 	});
 	if (error) throw error;
+	logActivity('list', release, STATUS_LABEL[status] || '');
 }
 
 export async function listByStatus(status) {
@@ -197,6 +198,7 @@ export async function setRating(release, vote) {
 		updated_at: new Date().toISOString()
 	});
 	if (error) throw error;
+	logActivity('rate', release, vote);
 }
 
 /** Расширенная статистика просмотра (для профиля). */
@@ -258,6 +260,45 @@ export async function addComment(releaseId, text) {
 export async function deleteComment(id) {
 	if (!supabase || !uid()) return;
 	await supabase.from('comments').delete().eq('id', id).eq('user_id', uid());
+}
+
+// ── Лента активности (своя + друзей) ──
+
+const STATUS_LABEL = { 1: 'смотрит', 2: 'планирует', 3: 'посмотрел', 4: 'отложил', 5: 'бросил' };
+
+/** Записать событие активности (видно друзьям). */
+export async function logActivity(type, release, meta) {
+	if (!supabase || !uid() || !release?.id) return;
+	try {
+		await supabase.from('activity').insert({
+			user_id: uid(),
+			type,
+			release_id: release.id,
+			title: release.title_ru || release.title || null,
+			image: release.image || null,
+			meta: meta != null ? String(meta) : null
+		});
+	} catch {}
+}
+
+/** Активность друзей (RLS отдаёт своё + друзей; своё исключаем). */
+export async function friendsActivity() {
+	if (!supabase || !uid()) return [];
+	const { data } = await supabase
+		.from('activity')
+		.select('*')
+		.neq('user_id', uid())
+		.order('created_at', { ascending: false })
+		.limit(40);
+	const rows = data || [];
+	const ids = [...new Set(rows.map((r) => r.user_id))];
+	/** @type {Record<string, any>} */
+	const profs = {};
+	if (ids.length) {
+		const { data: ps } = await supabase.from('profiles').select('id, username, avatar_url').in('id', ids);
+		for (const p of ps || []) profs[p.id] = p;
+	}
+	return rows.map((r) => ({ ...r, author: profs[r.user_id] || { username: 'Пользователь' } }));
 }
 
 // ── Профиль ──

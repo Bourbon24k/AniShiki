@@ -6,7 +6,7 @@
 	import { userToken, playingSettings, showToast } from '$lib/stores';
 	import { supabaseEnabled } from '$lib/supabase';
 	import { siteProfile, siteSession, currentSiteName } from '$lib/stores/auth';
-	import { saveHistory, getHistoryEntry } from '$lib/sitedata';
+	import { saveHistory, getHistoryEntry, logActivity } from '$lib/sitedata';
 	import {
 		coActive,
 		coRoomId,
@@ -113,8 +113,15 @@
 				seconds: videoEl.currentTime,
 				duration: videoEl.duration
 			}).catch(() => {});
+			// событие в ленту друзей — один раз за серию, после 60с просмотра
+			const wkey = `${releaseId}:${pos}`;
+			if (videoEl.currentTime > 60 && !loggedWatch.has(wkey)) {
+				loggedWatch.add(wkey);
+				logActivity('watch', release, pos != null ? `серия ${pos}` : '');
+			}
 		}
 	}
+	const loggedWatch = new Set();
 
 	// Совместный просмотр
 	let coName = '';
