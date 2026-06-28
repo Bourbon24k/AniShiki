@@ -4,7 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import { getApi } from '$lib/api';
-	import { releaseTypes, thumb } from '$lib/utils';
+	import { releaseTypes, thumb, seasons } from '$lib/utils';
 	import GridList from '$lib/components/GridList.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 
@@ -19,7 +19,51 @@
 	let debounce;
 	let reqId = 0;
 
-	$: typeFilter = releaseTypes.find((t) => t.id === activeType)?.filter || { sort: 0 };
+	// Расширенные фильтры
+	let filtersOpen = false;
+	let fSort = 0; // 0 дата обновления, 1 оценка, 2 год, 3 популярность
+	let fStatus = 0; // 0 любой, 1 завершён, 2 онгоинг, 3 анонс
+	let fSeason = 0; // 0 любой, 1-4
+	let fYearFrom = '';
+	let fYearTo = '';
+	const sortOpts = [
+		{ v: 0, label: 'По обновлению' },
+		{ v: 3, label: 'По популярности' },
+		{ v: 1, label: 'По оценке' },
+		{ v: 2, label: 'По году' }
+	];
+	const statusOpts = [
+		{ v: 0, label: 'Любой' },
+		{ v: 2, label: 'Онгоинг' },
+		{ v: 1, label: 'Завершён' },
+		{ v: 3, label: 'Анонс' }
+	];
+	const thisYear = new Date().getFullYear();
+	const years = Array.from({ length: thisYear - 1989 }, (_, i) => thisYear - i);
+
+	$: typeFilter = releaseTypes.find((t) => t.id === activeType)?.filter || {};
+	$: activeFilters =
+		(fStatus ? 1 : 0) + (fSeason ? 1 : 0) + (fYearFrom ? 1 : 0) + (fYearTo ? 1 : 0) + (fSort ? 1 : 0);
+	function buildFilter() {
+		/** @type {Record<string, any>} */
+		const f = { ...typeFilter, sort: fSort };
+		if (fStatus) f.status_id = fStatus;
+		if (fSeason) f.season = fSeason;
+		if (fYearFrom) f.start_year = Number(fYearFrom);
+		if (fYearTo) f.end_year = Number(fYearTo);
+		return f;
+	}
+	function applyFilters() {
+		run(true);
+	}
+	function resetFilters() {
+		fSort = 0;
+		fStatus = 0;
+		fSeason = 0;
+		fYearFrom = '';
+		fYearTo = '';
+		run(true);
+	}
 	$: isSearch = query.trim().length > 0;
 
 	async function run(reset = true) {
@@ -45,7 +89,7 @@
 					franchises = fr && fr.id && (fr.release_count || 0) > 1 ? [fr] : [];
 				}
 			} else {
-				data = await api.release.filter(pageNum, typeFilter, true);
+				data = await api.release.filter(pageNum, buildFilter(), true);
 				list = data?.content || [];
 			}
 			if (myReq !== reqId) return; // устаревший ответ
@@ -103,11 +147,57 @@
 	</div>
 
 	{#if !isSearch}
-		<div class="tabs no-scrollbar">
-			{#each releaseTypes as t}
-				<button class="tab" class:active={activeType === t.id} on:click={() => pickType(t.id)}>{t.label}</button>
-			{/each}
+		<div class="tabs-row">
+			<div class="tabs no-scrollbar">
+				{#each releaseTypes as t}
+					<button class="tab" class:active={activeType === t.id} on:click={() => pickType(t.id)}>{t.label}</button>
+				{/each}
+			</div>
+			<button class="filters-toggle" class:on={filtersOpen || activeFilters} on:click={() => (filtersOpen = !filtersOpen)}>
+				<Icon name="discover" size={16} /> Фильтры{#if activeFilters}<span class="fbadge">{activeFilters}</span>{/if}
+			</button>
 		</div>
+
+		{#if filtersOpen}
+			<div class="filters glass">
+				<div class="f">
+					<label>Сортировка</label>
+					<select bind:value={fSort} on:change={applyFilters}>
+						{#each sortOpts as o}<option value={o.v}>{o.label}</option>{/each}
+					</select>
+				</div>
+				<div class="f">
+					<label>Статус</label>
+					<select bind:value={fStatus} on:change={applyFilters}>
+						{#each statusOpts as o}<option value={o.v}>{o.label}</option>{/each}
+					</select>
+				</div>
+				<div class="f">
+					<label>Сезон</label>
+					<select bind:value={fSeason} on:change={applyFilters}>
+						<option value={0}>Любой</option>
+						{#each [1, 2, 3, 4] as s}<option value={s}>{seasons[s]}</option>{/each}
+					</select>
+				</div>
+				<div class="f">
+					<label>Год с</label>
+					<select bind:value={fYearFrom} on:change={applyFilters}>
+						<option value="">—</option>
+						{#each years as y}<option value={y}>{y}</option>{/each}
+					</select>
+				</div>
+				<div class="f">
+					<label>Год по</label>
+					<select bind:value={fYearTo} on:change={applyFilters}>
+						<option value="">—</option>
+						{#each years as y}<option value={y}>{y}</option>{/each}
+					</select>
+				</div>
+				{#if activeFilters}
+					<button class="reset" on:click={resetFilters}>Сбросить</button>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 
 	<div class="content">
@@ -175,12 +265,85 @@
 		place-items: center;
 		padding: 4px;
 	}
+	.tabs-row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding-bottom: 14px;
+	}
 	.tabs {
 		display: flex;
 		gap: 8px;
 		overflow-x: auto;
-		padding-bottom: 14px;
-		flex-shrink: 0;
+		flex: 1;
+		min-width: 0;
+	}
+	.filters-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		white-space: nowrap;
+		padding: 9px 16px;
+		border: 1px solid var(--glass-border);
+		background: var(--alt-background-color);
+		color: var(--text-color);
+		border-radius: 12px;
+		cursor: pointer;
+		font-size: 14px;
+		font-weight: 600;
+	}
+	.filters-toggle.on {
+		border-color: var(--primary-color);
+		color: var(--primary-color);
+	}
+	.fbadge {
+		display: inline-grid;
+		place-items: center;
+		min-width: 18px;
+		height: 18px;
+		padding: 0 5px;
+		border-radius: 9px;
+		background: var(--primary-color);
+		color: #fff;
+		font-size: 11px;
+	}
+	.filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 14px;
+		align-items: flex-end;
+		padding: 16px;
+		border-radius: 14px;
+		margin-bottom: 16px;
+	}
+	.filters .f {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.filters label {
+		font-size: 12px;
+		color: var(--secondary-text-color);
+		font-weight: 600;
+	}
+	.filters select {
+		padding: 9px 12px;
+		border-radius: 10px;
+		border: 1px solid var(--glass-border);
+		background: var(--background-color);
+		color: var(--text-color);
+		font-size: 14px;
+		cursor: pointer;
+		min-width: 130px;
+	}
+	.reset {
+		padding: 9px 16px;
+		border-radius: 10px;
+		border: 1px solid var(--glass-border);
+		background: transparent;
+		color: var(--secondary-text-color);
+		cursor: pointer;
+		font-weight: 600;
 	}
 	.tab {
 		white-space: nowrap;
