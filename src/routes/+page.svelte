@@ -3,8 +3,7 @@
 	import { getApi } from '$lib/api';
 	import { userToken } from '$lib/stores';
 	import { authReady, siteSession } from '$lib/stores/auth';
-	import { listContinue } from '$lib/sitedata';
-	import { getRecommendations } from '$lib/recommend';
+	import { getContinueWatching, getRecommendations } from '$lib/personal';
 	import Hero from '$lib/components/Hero.svelte';
 	import ReleaseRow from '$lib/components/ReleaseRow.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
@@ -24,21 +23,21 @@
 	let recommendedPersonal = false;
 	let recommendedLoading = true;
 
-	// «Продолжить просмотр» для аккаунта сайта: сессия резолвится асинхронно,
-	// поэтому перезагружаем список на каждую смену пользователя (вход и выход).
+	// «Продолжить просмотр»: сессия резолвится асинхронно, поэтому перезагружаем
+	// список на каждую смену пользователя (вход и выход).
 	let continueFor = undefined;
-	$: if (!$userToken) syncContinue($siteSession?.user?.id ?? null);
+	$: if ($authReady) syncContinue(($userToken && 'anixart') || $siteSession?.user?.id || null);
 
-	function syncContinue(userId) {
-		if (userId === continueFor) return;
-		continueFor = userId;
-		if (!userId) {
+	function syncContinue(key) {
+		if (key === continueFor) return;
+		continueFor = key;
+		if (!key) {
 			watching = [];
 			watchingLoading = false;
 			return;
 		}
 		watchingLoading = true;
-		listContinue()
+		getContinueWatching()
 			.then((r) => (watching = r))
 			.catch((e) => {
 				console.error('continue watching', e);
@@ -86,12 +85,6 @@
 		popular = pop;
 		heroItems = pop.slice(0, 6);
 		heroLoading = false;
-
-		// Продолжить просмотр (если авторизован в Anixart): элементы приходят
-		// обёрнутыми в {release}, поэтому распаковываем — иначе карточки пустые.
-		if ($userToken) {
-			watching = (await safe(api.discover.getWatching(0))).map((x) => x?.release || x).filter(Boolean);
-		}
 
 		const [on, an, co, fi] = await Promise.all([
 			safe(api.release.filter(0, { sort: 0, status_id: 2 }, true)),

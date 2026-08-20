@@ -3,8 +3,7 @@
 	import { getApi } from '$lib/api';
 	import { userToken } from '$lib/stores';
 	import { authReady, siteSession } from '$lib/stores/auth';
-	import { listContinue } from '$lib/sitedata';
-	import { getRecommendations } from '$lib/recommend';
+	import { getContinueWatching, getRecommendations } from '$lib/personal';
 	import ReleaseRow from '$lib/components/ReleaseRow.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 
@@ -15,6 +14,7 @@
 	let topRated = [];
 	let films = [];
 	let randomList = [];
+	let watchingNow = [];
 	let loading = true;
 	let randomLoading = false;
 	let personalLoading = true;
@@ -34,14 +34,12 @@
 				console.error('recommendations', e);
 				return { items: [], personal: false };
 			}),
-			$userToken
-				? safe(getApi()?.discover.getWatching(0))
-				: $siteSession
-					? listContinue().catch((e) => {
-							console.error('continue watching', e);
-							return [];
-					  })
-					: Promise.resolve([])
+			key
+				? getContinueWatching().catch((e) => {
+						console.error('continue watching', e);
+						return [];
+				  })
+				: Promise.resolve([])
 		]);
 		recommendations = recs.items;
 		recommendationsPersonal = recs.personal;
@@ -97,9 +95,11 @@
 		const api = getApi();
 		if (!api) return;
 		loadRandom();
-		[interesting, discussing, topRated, films] = await Promise.all([
+		[interesting, discussing, watchingNow, topRated, films] = await Promise.all([
 			safeInteresting(api.discover.getInteresting(0)),
 			safe(api.discover.getDiscussing()),
+			// /discover/watching — глобальный блок «сейчас смотрят», не личный список
+			safe(api.discover.getWatching(0)),
 			safe(api.release.filter(0, { sort: 1 }, true)),
 			safe(api.release.filter(0, { sort: 1, category_id: 2 }, true))
 		]);
@@ -137,6 +137,7 @@
 	{/if}
 
 	<ReleaseRow title="Интересное" items={interesting} {loading} numbered />
+	<ReleaseRow title="Сейчас смотрят" items={watchingNow} {loading} />
 	<ReleaseRow title="Высокий рейтинг" items={topRated} {loading} href="/search?type=5" />
 	<ReleaseRow title="Сейчас обсуждают" items={discussing} {loading} />
 	<ReleaseRow title="Популярные фильмы" items={films} {loading} href="/search?type=4" />

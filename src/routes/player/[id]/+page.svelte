@@ -349,6 +349,10 @@
 					} catch {}
 				}
 			}
+			// ?ep=N из блока «Продолжить просмотр» — открыть именно эту серию.
+			// Секунду сохраняем, только если сохранённый прогресс от неё же.
+			const wantEp = Number($page.url.searchParams.get('ep'));
+			if (wantEp > 0 && pendingResume?.ep !== wantEp) pendingResume = { ep: wantEp, sec: 0 };
 			await loadDubbers();
 		} catch (e) {
 			console.error(e);
