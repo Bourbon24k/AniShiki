@@ -567,7 +567,10 @@
 
 		if (/\.m3u8/i.test(url)) {
 			if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-				videoEl.src = url;
+				// Safari принимает плейлист только с типом application/vnd.apple.mpegurl,
+				// а CDN отдаёт его как text/plain — отсюда вечная загрузка на iPhone.
+				// Гоним манифест (не видео) через свой эндпоинт с правильным типом.
+				videoEl.src = `/api/hls?url=${encodeURIComponent(url)}`;
 				videoEl.play?.().catch(() => {});
 			} else {
 				const { default: Hls } = await import('hls.js');
@@ -1057,8 +1060,10 @@
 		display: flex;
 		align-items: center;
 		gap: 14px;
-		padding: 0 16px;
-		height: 56px;
+		/* В standalone-режиме на iPhone шапка плеера уезжала под статус-бар:
+		   у этого экрана нет общего Header, поэтому верхнюю зону учитываем здесь. */
+		padding: env(safe-area-inset-top, 0px) 16px 0;
+		height: calc(56px + env(safe-area-inset-top, 0px));
 		z-index: 10;
 		border-bottom: 1px solid var(--glass-border);
 	}
