@@ -222,6 +222,13 @@
 	$: bufPct = (() => {
 		if (!buffered || !buffered.length || !duration) return 0;
 		try {
+			// Берём диапазон, в котором находимся сейчас: последний диапазон может
+			// быть за разрывом (после перемотки) и врать про «подгружено вперёд».
+			for (let i = 0; i < buffered.length; i++) {
+				if (currentTime >= buffered.start(i) - 0.5 && currentTime <= buffered.end(i)) {
+					return Math.min(100, (buffered.end(i) / duration) * 100);
+				}
+			}
 			return Math.min(100, (buffered.end(buffered.length - 1) / duration) * 100);
 		} catch {
 			return 0;
@@ -618,12 +625,55 @@
 				break;
 		}
 	}
-	function toggleFs() {
-		if (!document.fullscreenElement) stageEl?.requestFullscreen?.();
-		else document.exitFullscreen?.();
+	/** Текущий полноэкранный элемент с учётом вебкитовских префиксов. */
+	function fsElement() {
+		return document.fullscreenElement || document.webkitFullscreenElement || null;
+	}
+	function fsActive() {
+		return !!fsElement() || !!videoEl?.webkitDisplayingFullscreen;
+	}
+
+	async function toggleFs() {
+		if (fsActive()) {
+			try {
+				if (document.exitFullscreen) await document.exitFullscreen();
+				else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+				else if (videoEl?.webkitExitFullscreen) videoEl.webkitExitFullscreen();
+			} catch (e) {
+				console.warn('exit fullscreen', e);
+			}
+			try {
+				screen.orientation?.unlock?.();
+			} catch {}
+			return;
+		}
+		// На iPhone Element.requestFullscreen отсутствует: там полноэкранный режим
+		// умеет только сам <video> через webkitEnterFullscreen. Раньше кнопка молча
+		// ничего не делала — отсюда «на мобиле не работает полный экран».
+		try {
+			if (stageEl?.requestFullscreen) await stageEl.requestFullscreen();
+			else if (stageEl?.webkitRequestFullscreen) stageEl.webkitRequestFullscreen();
+			else if (videoEl?.webkitEnterFullscreen) videoEl.webkitEnterFullscreen();
+			else {
+				showToast('Полноэкранный режим не поддерживается браузером', 'error');
+				return;
+			}
+		} catch (e) {
+			// Android WebView иногда отклоняет запрос на контейнер — пробуем видео.
+			if (videoEl?.webkitEnterFullscreen) videoEl.webkitEnterFullscreen();
+			else {
+				console.warn('fullscreen', e);
+				showToast('Не удалось открыть полный экран', 'error');
+				return;
+			}
+		}
+		// На телефоне альбомная ориентация даёт нормальный размер картинки.
+		try {
+			await screen.orientation?.lock?.('landscape');
+		} catch {}
 	}
 	function onFsChange() {
-		isFs = !!document.fullscreenElement;
+		isFs = fsActive();
 	}
 
 	async function maybeAutoJoin() {
@@ -648,6 +698,7 @@
 		else loadRelease();
 		window.addEventListener('keydown', onKey);
 		document.addEventListener('fullscreenchange', onFsChange);
+		document.addEventListener('webkitfullscreenchange', onFsChange);
 	});
 	onDestroy(() => {
 		saveProgress(true);
@@ -658,6 +709,7 @@
 		if (typeof window !== 'undefined') {
 			window.removeEventListener('keydown', onKey);
 			document.removeEventListener('fullscreenchange', onFsChange);
+			document.removeEventListener('webkitfullscreenchange', onFsChange);
 		}
 	});
 </script>
@@ -715,6 +767,8 @@
 							bind:volume
 							bind:muted
 							bind:buffered
+							on:webkitbeginfullscreen={onFsChange}
+							on:webkitendfullscreen={onFsChange}
 							on:waiting={() => (buffering = true)}
 							on:playing={() => (buffering = false)}
 							on:canplay={() => (buffering = false)}
@@ -810,6 +864,12 @@
 									</div>
 
 									<span class="time">{fmt(currentTime)} <span class="sep">/</span> {fmt(duration)}</span>
+
+									{#if bufPct > 0 && bufPct < 99.5}
+										<span class="loaded" title="Серия подгружена на {Math.round(bufPct)}%">
+											<i style="--v:{Math.round(bufPct)}%"></i>{Math.round(bufPct)}%
+										</span>
+									{/if}
 
 									<span class="spacer"></span>
 
@@ -1277,7 +1337,8 @@
 		width: var(--b, 0%);
 		height: 4px;
 		border-radius: 4px;
-		background: rgba(255, 255, 255, 0.4);
+		background: rgba(255, 255, 255, 0.52);
+		transition: width 0.25s ease;
 	}
 	.seek input {
 		position: relative;
@@ -1365,6 +1426,38 @@
 	.time .sep {
 		opacity: 0.5;
 		margin: 0 2px;
+	}
+
+	/* насколько серия подгружена вперёд */
+	.loaded {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 12px;
+		font-variant-numeric: tabular-nums;
+		color: rgba(255, 255, 255, 0.66);
+		white-space: nowrap;
+	}
+	.loaded i {
+		width: 34px;
+		height: 4px;
+		border-radius: 3px;
+		background: rgba(255, 255, 255, 0.22);
+		overflow: hidden;
+	}
+	.loaded i::before {
+		content: '';
+		display: block;
+		height: 100%;
+		width: var(--v, 0%);
+		border-radius: 3px;
+		background: rgba(255, 255, 255, 0.75);
+		transition: width 0.25s ease;
+	}
+	@media (max-width: 560px) {
+		.loaded i {
+			display: none;
+		}
 	}
 
 	/* громкость */
