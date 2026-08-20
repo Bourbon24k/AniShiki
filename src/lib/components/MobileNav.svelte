@@ -14,7 +14,7 @@
 	}
 </script>
 
-<nav class="mnav glass">
+<nav class="mnav">
 	<a href="/" class="item" class:active={isActive('/')}>
 		<Icon name="home" size={22} /><span>Главная</span>
 	</a>
@@ -56,6 +56,10 @@
 		right: 0;
 		height: calc(56px + var(--safe-bottom, 0px));
 		padding-bottom: var(--safe-bottom, 0px);
+		/* Сплошной фон вместо стекла: за верхней частью панели есть контент, за
+		   нижней (зона безопасности) — нет, и backdrop-filter размывал там чистый
+		   фон. Одна панель читалась как панель плюс чёрная полоса под ней. */
+		background: var(--alt-background-color);
 		border-top: 1px solid var(--glass-border);
 		z-index: 100;
 	}
