@@ -10,6 +10,8 @@
 	import MobileNav from '$lib/components/MobileNav.svelte';
 	import SlideMenu from '$lib/components/SlideMenu.svelte';
 	import Toast from '$lib/components/Toast.svelte';
+	import InstallBanner from '$lib/components/InstallBanner.svelte';
+	import { initPwa } from '$lib/pwa';
 
 	let isMobile = false;
 	$: path = $page.url.pathname;
@@ -28,6 +30,7 @@
 	onMount(() => {
 		syncMobile();
 		window.addEventListener('resize', syncMobile);
+		const disposePwa = initPwa();
 
 		if ($userToken) {
 			const api = getApi();
@@ -36,7 +39,10 @@
 				.then((r) => notificationCount.set(r?.count ?? 0))
 				.catch(() => {});
 		}
-		return () => window.removeEventListener('resize', syncMobile);
+		return () => {
+			window.removeEventListener('resize', syncMobile);
+			disposePwa();
+		};
 	});
 </script>
 
@@ -59,6 +65,10 @@
 
 	{#if isMobile && !isAuthRoute && !isPlayer}
 		<MobileNav />
+	{/if}
+
+	{#if !isPlayer && !isAuthRoute}
+		<InstallBanner />
 	{/if}
 
 	<Toast />

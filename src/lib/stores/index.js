@@ -68,7 +68,6 @@ export const firstRun = persisted('first_run', true);
 export const notificationCount = writable(0);
 export const mobileMenuOpen = writable(false);
 export const profileInfo = writable(null);
-export const installPrompt = writable(null);
 export const toast = writable(null);
 
 /** Показать всплывающее уведомление. */

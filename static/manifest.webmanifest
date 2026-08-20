@@ -1,14 +1,28 @@
 {
-	"name": "AniShiki",
+	"id": "/",
+	"name": "AniShiki — аниме онлайн",
 	"short_name": "AniShiki",
-	"description": "Неофициальный веб-клиент Anixart",
+	"description": "Каталог аниме, плеер без рекламы, списки, история и друзья.",
+	"lang": "ru",
+	"dir": "ltr",
 	"start_url": "/",
+	"scope": "/",
 	"display": "standalone",
+	"display_override": ["standalone", "minimal-ui"],
+	"orientation": "any",
 	"background_color": "#0a0a0a",
 	"theme_color": "#0a0a0a",
+	"categories": ["entertainment", "video"],
 	"icons": [
 		{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-		{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-		{ "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+		{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+		{ "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+		{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+		{ "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+	],
+	"shortcuts": [
+		{ "name": "Продолжить просмотр", "short_name": "Продолжить", "url": "/history", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+		{ "name": "Поиск аниме", "short_name": "Поиск", "url": "/search", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+		{ "name": "Закладки", "short_name": "Закладки", "url": "/bookmarks", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
 	]
 }

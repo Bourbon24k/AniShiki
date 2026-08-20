@@ -7,6 +7,11 @@
 		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
 		<meta name="theme-color" content="#0a0a0a" />
+		<!-- Standalone-режим на iOS: без этих тегов «на экран «Домой»» открывается в Safari -->
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-title" content="AniShiki" />
 		<meta name="description" content="AniShiki — неофициальный веб-клиент Anixart" />
 		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
