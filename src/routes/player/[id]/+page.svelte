@@ -249,7 +249,7 @@
 
 	function togglePlay() {
 		if (!videoEl) return;
-		if (videoEl.paused) videoEl.play();
+		if (videoEl.paused) videoEl.play?.().catch(() => {});
 		else videoEl.pause();
 		showControlsTemp();
 	}
@@ -474,8 +474,12 @@
 		duration = 0;
 		if (videoEl) {
 			try {
+				videoEl.pause();
+				const had = !!videoEl.getAttribute('src');
 				videoEl.removeAttribute('src');
-				videoEl.load();
+				// load() без источника заставляет браузер искать ресурс и падать
+				// с NotSupportedError — зовём только если было что сбрасывать.
+				if (had) videoEl.load();
 			} catch {}
 		}
 		videoUrl = '';
@@ -550,8 +554,8 @@
 			const onmeta = () => {
 				try {
 					videoEl.currentTime = t;
-					videoEl.play();
 				} catch {}
+				videoEl.play?.().catch(() => {});
 				videoEl.removeEventListener('loadedmetadata', onmeta);
 			};
 			videoEl.addEventListener('loadedmetadata', onmeta);
@@ -572,6 +576,8 @@
 		} else {
 			videoEl.src = url;
 		}
+		// Раньше запуск делал атрибут autoplay — он же и шумел ошибками при сбросе.
+		videoEl.play?.().catch(() => {});
 	}
 
 	function destroyHls() {
@@ -759,7 +765,6 @@
 						<video
 							bind:this={videoEl}
 							class="vid"
-							autoplay
 							playsinline
 							bind:paused
 							bind:currentTime

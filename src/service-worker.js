@@ -52,14 +52,33 @@ self.addEventListener('fetch', (event) => {
 	// Навигация — network-first, офлайн отдаём оболочку приложения.
 	if (request.mode === 'navigate') {
 		event.respondWith(
-			fetch(request).catch(async () => {
-				const cache = await caches.open(CACHE);
-				return (await cache.match(SHELL)) || (await cache.match('/')) || Response.error();
-			})
+			(async () => {
+				try {
+					return await fetch(request);
+				} catch (err) {
+					const cache = await caches.open(CACHE);
+					const shell = (await cache.match(SHELL)) || (await cache.match('/'));
+					// Оболочки в кэше может не быть (прекэш ещё идёт или сорвался).
+					// Тогда пробрасываем исходную ошибку: пусть браузер покажет свою
+					// офлайн-страницу, а не наш пустой network error.
+					if (shell) return shell;
+					throw err;
+				}
+			})()
 		);
 		return;
 	}
 
 	// Остальное своего origin — из сети с откатом в кэш.
-	event.respondWith(fetch(request).catch(() => caches.match(request).then((hit) => hit || Response.error())));
+	event.respondWith(
+		(async () => {
+			try {
+				return await fetch(request);
+			} catch (err) {
+				const hit = await caches.match(request);
+				if (hit) return hit;
+				throw err;
+			}
+		})()
+	);
 });

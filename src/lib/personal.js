@@ -25,6 +25,20 @@ function unwrap(list) {
 	return (list || []).map((x) => x?.release || x).filter((x) => x && x.id);
 }
 
+/**
+ * Уже просмотренное/добавленное к себе — такому в подборках не место.
+ * Для Anixart признак приходит прямо в релизе (is_viewed, profile_list_status),
+ * для аккаунта сайта берётся из tasteSeed().
+ */
+function isSeen(item, seen) {
+	return (
+		seen.has(Number(item?.id)) ||
+		item?.is_viewed === true ||
+		Number(item?.profile_list_status) > 0 ||
+		Number(item?.your_vote) > 0
+	);
+}
+
 /** Релиз из истории Anixart → карточка со ссылкой в плеер и номером серии. */
 function toContinueCard(release) {
 	const position = Number(release?.last_view_episode?.position) || 0;
@@ -60,8 +74,11 @@ export async function getRecommendations(limit = 24) {
 	const api = getApi();
 	if (!api) return { items: [], personal: false };
 
-	const topRated = () =>
-		safe(api.release.filter(0, { sort: 1 }, true).then((r) => unwrap(r?.content)), []);
+	/** Высокий рейтинг за вычетом того, что человек уже смотрел. */
+	const topRated = async (seen = new Set()) => {
+		const items = await safe(api.release.filter(0, { sort: 1 }, true).then((r) => unwrap(r?.content)), []);
+		return items.filter((item) => !isSeen(item, seen));
+	};
 
 	// 1. Anixart отдаёт персональные рекомендации сам — показываем как есть.
 	if (get(userToken)) {
@@ -71,9 +88,8 @@ export async function getRecommendations(limit = 24) {
 		return { items: (await topRated()).slice(0, limit), personal: false };
 	}
 
-	// 2. Аккаунт сайта: строим из «похожего» для любимых тайтлов.
 	const { liked, seen } = await safe(tasteSeed(), { liked: [], seen: new Set() });
-	if (!liked.length) return { items: (await topRated()).slice(0, limit), personal: false };
+	if (!liked.length) return { items: (await topRated(seen)).slice(0, limit), personal: false };
 
 	const infos = await Promise.all(
 		liked.slice(0, SEED_LIMIT).map((id) => safe(api.release.info(id, true).then((d) => d?.release), null))
@@ -86,7 +102,7 @@ export async function getRecommendations(limit = 24) {
 			...(release?.related_releases || [])
 		]);
 		for (const item of similar) {
-			if (seen.has(Number(item.id))) continue;
+			if (isSeen(item, seen)) continue;
 			const entry = tally.get(item.id);
 			if (entry) entry.hits += 1;
 			else tally.set(item.id, { item, hits: 1 });
@@ -99,8 +115,8 @@ export async function getRecommendations(limit = 24) {
 
 	if (items.length < 6) {
 		// «Похожего» почти не нашлось — дополняем высоким рейтингом.
-		const fill = (await topRated()).filter(
-			(item) => !seen.has(Number(item.id)) && !items.some((existing) => existing.id === item.id)
+		const fill = (await topRated(seen)).filter(
+			(item) => !items.some((existing) => existing.id === item.id)
 		);
 		return { items: [...items, ...fill].slice(0, limit), personal: items.length > 0 };
 	}
