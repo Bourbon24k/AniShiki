@@ -17,11 +17,15 @@ async function loadProfile(userId) {
 }
 
 if (supabase) {
-	supabase.auth.getSession().then(({ data }) => {
-		siteSession.set(data.session);
-		if (data.session) loadProfile(data.session.user.id);
-		authReady.set(true);
-	});
+	supabase.auth
+		.getSession()
+		.then(({ data }) => {
+			siteSession.set(data.session);
+			if (data.session) loadProfile(data.session.user.id);
+		})
+		// Экраны ждут authReady, поэтому флаг обязан подняться даже при сбое сети.
+		.catch((e) => console.error('auth session', e))
+		.finally(() => authReady.set(true));
 	supabase.auth.onAuthStateChange((_event, session) => {
 		siteSession.set(session);
 		loadProfile(session?.user?.id);

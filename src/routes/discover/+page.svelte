@@ -2,6 +2,9 @@
 	import { onMount } from 'svelte';
 	import { getApi } from '$lib/api';
 	import { userToken } from '$lib/stores';
+	import { authReady, siteSession } from '$lib/stores/auth';
+	import { listContinue } from '$lib/sitedata';
+	import { getRecommendations } from '$lib/recommend';
 	import ReleaseRow from '$lib/components/ReleaseRow.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 
@@ -14,6 +17,37 @@
 	let randomList = [];
 	let loading = true;
 	let randomLoading = false;
+	let personalLoading = true;
+	let recommendationsPersonal = false;
+
+	// Персональные блоки: у Anixart — своя выдача, у аккаунта сайта — Supabase.
+	// Сессия резолвится асинхронно, поэтому ждём authReady и следим за сменой юзера.
+	let personalFor = undefined;
+	$: if ($authReady) syncPersonal(($userToken && 'anixart') || $siteSession?.user?.id || null);
+
+	async function syncPersonal(key) {
+		if (key === personalFor) return;
+		personalFor = key;
+		personalLoading = true;
+		const [recs, cont] = await Promise.all([
+			getRecommendations().catch((e) => {
+				console.error('recommendations', e);
+				return { items: [], personal: false };
+			}),
+			$userToken
+				? safe(getApi()?.discover.getWatching(0))
+				: $siteSession
+					? listContinue().catch((e) => {
+							console.error('continue watching', e);
+							return [];
+					  })
+					: Promise.resolve([])
+		]);
+		recommendations = recs.items;
+		recommendationsPersonal = recs.personal;
+		watching = cont;
+		personalLoading = false;
+	}
 
 	async function safe(p) {
 		try {
@@ -69,12 +103,6 @@
 			safe(api.release.filter(0, { sort: 1 }, true)),
 			safe(api.release.filter(0, { sort: 1, category_id: 2 }, true))
 		]);
-		if ($userToken) {
-			[recommendations, watching] = await Promise.all([
-				safe(api.discover.getRecommendations(0)),
-				safe(api.discover.getWatching(0))
-			]);
-		}
 		loading = false;
 	});
 </script>
@@ -92,11 +120,20 @@
 	</div>
 	<ReleaseRow title="" items={randomList} loading={randomLoading} />
 
-	{#if $userToken && (loading || watching.length)}
-		<ReleaseRow title="Продолжить просмотр" items={watching} loading={loading && !watching.length} />
+	{#if ($userToken || $siteSession) && (personalLoading || watching.length)}
+		<ReleaseRow
+			title="Продолжить просмотр"
+			items={watching}
+			loading={personalLoading && !watching.length}
+			href="/history"
+		/>
 	{/if}
-	{#if $userToken && (loading || recommendations.length)}
-		<ReleaseRow title="Рекомендации для вас" items={recommendations} loading={loading && !recommendations.length} />
+	{#if personalLoading || recommendations.length}
+		<ReleaseRow
+			title={recommendationsPersonal ? 'Рекомендации для вас' : 'Может понравиться'}
+			items={recommendations}
+			loading={personalLoading && !recommendations.length}
+		/>
 	{/if}
 
 	<ReleaseRow title="Интересное" items={interesting} {loading} numbered />

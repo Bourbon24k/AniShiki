@@ -8,12 +8,15 @@
 	export let index = null;
 
 	$: status = getStatusInfo(anime?.status);
+	// Карточки «Продолжить просмотр» приходят со ссылкой в плеер, подписью серии и прогрессом.
+	$: link = anime?.href || `/release/${anime?.id}`;
+	$: progress = Number(anime?.progress) || 0;
 	$: poster = thumb(anime?.image || anime?.poster, { w: type === 'full-row' ? 256 : 320 });
 	$: epStr = returnEpisodeString(anime);
 	$: hasMeta = epStr !== '?' || anime?.year != null;
 </script>
 
-<a href={`/release/${anime.id}`} class="card {type}" style="--idx:{index}">
+<a href={link} class="card {type}" style="--idx:{index}">
 	<div class="poster">
 		{#if poster}
 			<img src={poster} alt={anime.title_ru} loading="lazy" decoding="async" referrerpolicy="no-referrer" />
@@ -33,6 +36,12 @@
 		{#if anime?.grade}
 			<span class="grade"><Icon name="star" size={12} fill="#ffc107" />{anime.grade.toFixed(1)}</span>
 		{/if}
+		{#if anime?.href}
+			<span class="resume"><Icon name="play" size={20} /></span>
+		{/if}
+		{#if progress > 0}
+			<span class="bar"><i style={`width:${Math.min(100, progress)}%`}></i></span>
+		{/if}
 		{#if type === 'poster'}
 			<div class="poster-info">
 				<h3>{anime.title_ru}</h3>
@@ -44,6 +53,7 @@
 	{#if type !== 'poster'}
 		<div class="info">
 			<h3 class="title">{anime.title_ru}</h3>
+			{#if anime?.badge}<span class="badge">{anime.badge}</span>{/if}
 			{#if type === 'full-row'}
 				<p class="alt">{anime.title_original || ''}</p>
 				<p class="desc">{(anime.description || '').slice(0, 220)}</p>
@@ -156,6 +166,42 @@
 		gap: 3px;
 		color: #fff;
 		background: rgba(0, 0, 0, 0.62);
+	}
+
+	/* «Продолжить просмотр»: кнопка воспроизведения и полоса прогресса */
+	.resume {
+		position: absolute;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		color: #fff;
+		opacity: 0;
+		background: rgba(0, 0, 0, 0.38);
+		transition: opacity 0.2s ease;
+	}
+	.card:hover .resume,
+	.card:focus-visible .resume {
+		opacity: 1;
+	}
+	.bar {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 4px;
+		background: rgba(0, 0, 0, 0.55);
+	}
+	.bar i {
+		display: block;
+		height: 100%;
+		background: var(--primary-color);
+	}
+	.badge {
+		display: block;
+		margin-top: 3px;
+		font-size: 11.5px;
+		font-weight: 600;
+		color: var(--primary-color);
 	}
 
 	/* grid */

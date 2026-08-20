@@ -96,8 +96,12 @@ export async function getHistoryEntry(releaseId) {
 	return data || null;
 }
 
-/** «Продолжить просмотр» — записи с ненулевой позицией. */
-export async function listContinue() {
+/**
+ * «Продолжить просмотр» — записи с ненулевой позицией.
+ * Карточка ведёт сразу в плеер (он сам доматывает до сохранённой секунды)
+ * и показывает номер серии с процентом просмотра.
+ */
+export async function listContinue(limit = 20) {
 	if (!supabase || !uid()) return [];
 	const { data } = await supabase
 		.from('history')
@@ -105,8 +109,70 @@ export async function listContinue() {
 		.eq('user_id', uid())
 		.gt('seconds', 0)
 		.order('updated_at', { ascending: false })
-		.limit(20);
-	return (data || []).map(toCard);
+		.limit(limit * 2);
+
+	const cards = [];
+	for (const row of data || []) {
+		const seconds = Number(row.seconds) || 0;
+		const duration = Number(row.duration) || 0;
+		const percent = duration > 0 ? Math.round((seconds / duration) * 100) : 0;
+		// Серия досмотрена до конца — продолжать в ней нечего.
+		if (percent >= 95) continue;
+		const episode = Number(row.episode_position);
+		cards.push({
+			...toCard(row),
+			href: `/player/${row.release_id}`,
+			progress: Math.min(99, percent),
+			badge: episode > 0 ? `${episode} серия · ${fmtPosition(seconds)}` : fmtPosition(seconds)
+		});
+		if (cards.length >= limit) break;
+	}
+	return cards;
+}
+
+/** Секунды → «12:34» / «1:02:03». */
+function fmtPosition(seconds) {
+	const total = Math.max(0, Math.floor(seconds));
+	const s = String(total % 60).padStart(2, '0');
+	const m = Math.floor(total / 60) % 60;
+	const h = Math.floor(total / 3600);
+	return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+/**
+ * Материал для рекомендаций: что пользователю нравится и что он уже видел.
+ * @returns {Promise<{ liked: number[], seen: Set<number> }>}
+ */
+export async function tasteSeed() {
+	if (!supabase || !uid()) return { liked: [], seen: new Set() };
+	const [fav, rated, lists, hist] = await Promise.all([
+		supabase.from('favorites').select('release_id').eq('user_id', uid()).limit(100),
+		supabase.from('ratings').select('release_id, vote').eq('user_id', uid()).limit(200),
+		supabase.from('lists').select('release_id, status').eq('user_id', uid()).limit(200),
+		supabase
+			.from('history')
+			.select('release_id')
+			.eq('user_id', uid())
+			.order('updated_at', { ascending: false })
+			.limit(60)
+	]);
+
+	const seen = new Set();
+	for (const source of [fav, rated, lists, hist]) {
+		for (const row of source.data || []) if (row.release_id) seen.add(row.release_id);
+	}
+
+	// Приоритет: высокие оценки → избранное → «просмотрено»/«смотрю» → свежая история.
+	const liked = [];
+	const push = (id) => {
+		if (id && !liked.includes(id)) liked.push(id);
+	};
+	for (const row of (rated.data || []).filter((r) => r.vote >= 8)) push(row.release_id);
+	for (const row of fav.data || []) push(row.release_id);
+	for (const row of (lists.data || []).filter((r) => r.status === 3 || r.status === 1)) push(row.release_id);
+	for (const row of hist.data || []) push(row.release_id);
+
+	return { liked, seen };
 }
 
 // ── Списки по статусам (1 смотрю,2 в планах,3 просмотрено,4 отложено,5 брошено) ──
