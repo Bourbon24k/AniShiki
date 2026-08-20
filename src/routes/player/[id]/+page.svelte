@@ -474,6 +474,7 @@
 		duration = 0;
 		if (videoEl) {
 			try {
+				videoEl.autoplay = false;
 				videoEl.pause();
 				const had = !!videoEl.getAttribute('src');
 				videoEl.removeAttribute('src');
@@ -560,24 +561,32 @@
 			};
 			videoEl.addEventListener('loadedmetadata', onmeta);
 		}
+		// Автозапуск включаем свойством, а не атрибутом: атрибут переживал сброс
+		// источника и заставлял load() искать несуществующий ресурс.
+		videoEl.autoplay = true;
+
 		if (/\.m3u8/i.test(url)) {
 			if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
 				videoEl.src = url;
+				videoEl.play?.().catch(() => {});
 			} else {
 				const { default: Hls } = await import('hls.js');
 				if (Hls.isSupported()) {
 					hls = new Hls();
 					hls.loadSource(url);
 					hls.attachMedia(videoEl);
+					// До разбора манифеста играть нечего: play() здесь отклонялся
+					// впустую, и воспроизведение не начиналось вообще.
+					hls.on(Hls.Events.MANIFEST_PARSED, () => videoEl.play?.().catch(() => {}));
 				} else {
 					videoEl.src = url;
+					videoEl.play?.().catch(() => {});
 				}
 			}
 		} else {
 			videoEl.src = url;
+			videoEl.play?.().catch(() => {});
 		}
-		// Раньше запуск делал атрибут autoplay — он же и шумел ошибками при сбросе.
-		videoEl.play?.().catch(() => {});
 	}
 
 	function destroyHls() {
