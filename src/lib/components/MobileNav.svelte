@@ -56,12 +56,25 @@
 		right: 0;
 		height: calc(56px + var(--safe-bottom, 0px));
 		padding-bottom: var(--safe-bottom, 0px);
-		/* Сплошной фон вместо стекла: за верхней частью панели есть контент, за
-		   нижней (зона безопасности) — нет, и backdrop-filter размывал там чистый
-		   фон. Одна панель читалась как панель плюс чёрная полоса под ней. */
-		background: var(--alt-background-color);
+		/* Фон ровно как у страницы, а не отдельный оттенок: в standalone на iPhone
+		   под панелью остаётся полоса (её рисует фон окна, за пределами вёрстки).
+		   Совпадающий цвет делает стык невидимым, чем бы полоса ни рисовалась.
+		   Стекло здесь не годится: за нижней частью панели контента нет, и
+		   backdrop-filter размывал там чистый чёрный. */
+		background: var(--background-color);
 		border-top: 1px solid var(--glass-border);
 		z-index: 100;
+	}
+	/* Продолжение фона вниз — на случай, если полоса внутри вёрстки. */
+	.mnav::after {
+		content: '';
+		position: absolute;
+		top: 100%;
+		left: 0;
+		right: 0;
+		height: 80px;
+		background: var(--background-color);
+		pointer-events: none;
 	}
 	.item {
 		flex: 1;
