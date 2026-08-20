@@ -66,41 +66,56 @@
 			.finally(() => (recommendedLoading = false));
 	}
 
+	let failed = false;
+
 	async function safe(p) {
 		try {
 			const r = await p;
 			return r?.content || [];
 		} catch (e) {
 			console.error('home load error', e);
+			failed = true;
 			return [];
 		}
 	}
 
-	onMount(async () => {
+	async function loadCatalog() {
 		const api = getApi();
 		if (!api) return;
+		failed = false;
+		heroLoading = true;
+		rowsLoading = true;
+		try {
+			// Hero и «Сейчас популярно» — реальная популярность (sort 3), суженная до
+			// текущего и прошлого года: sort 1 — это «по оценке», вечный топ, где
+			// «сейчас» нет вообще (в выдаче висят тайтлы 1999–2000 годов).
+			const year = new Date().getFullYear();
+			const pop = await safe(
+				api.release.filter(0, { sort: 3, start_year: year - 1, end_year: year }, true)
+			);
+			popular = pop;
+			heroItems = pop.slice(0, 6);
+			heroLoading = false;
 
-		// Hero и «Сейчас популярно» — реальная популярность (sort 3), суженная до
-		// текущего и прошлого года: sort 1 — это «по оценке», вечный топ, где
-		// «сейчас» нет вообще (в выдаче висят тайтлы 1999–2000 годов).
-		const year = new Date().getFullYear();
-		const pop = await safe(api.release.filter(0, { sort: 3, start_year: year - 1, end_year: year }, true));
-		popular = pop;
-		heroItems = pop.slice(0, 6);
-		heroLoading = false;
+			const [on, an, co, fi] = await Promise.all([
+				safe(api.release.filter(0, { sort: 0, status_id: 2 }, true)),
+				safe(api.release.filter(0, { sort: 0, status_id: 3 }, true)),
+				safe(api.release.filter(0, { sort: 0, status_id: 1 }, true)),
+				safe(api.release.filter(0, { sort: 0, category_id: 2 }, true))
+			]);
+			ongoing = on;
+			announce = an;
+			completed = co;
+			films = fi;
+		} finally {
+			// Каталог мог не ответить — гасим скелетоны в любом случае,
+			// иначе страница висит в загрузке до бесконечности.
+			heroLoading = false;
+			rowsLoading = false;
+		}
+	}
 
-		const [on, an, co, fi] = await Promise.all([
-			safe(api.release.filter(0, { sort: 0, status_id: 2 }, true)),
-			safe(api.release.filter(0, { sort: 0, status_id: 3 }, true)),
-			safe(api.release.filter(0, { sort: 0, status_id: 1 }, true)),
-			safe(api.release.filter(0, { sort: 0, category_id: 2 }, true))
-		]);
-		ongoing = on;
-		announce = an;
-		completed = co;
-		films = fi;
-		rowsLoading = false;
-	});
+	onMount(loadCatalog);
 </script>
 
 <svelte:head>
@@ -108,6 +123,17 @@
 </svelte:head>
 
 <div class="home">
+	{#if failed && !popular.length && !heroLoading}
+		<div class="offline">
+			<strong>Каталог сейчас недоступен</strong>
+			<p>
+				Сервер Anixart, откуда берутся тайтлы, не отвечает. Это не на нашей стороне — списки
+				появятся, как только он поднимется.
+			</p>
+			<button on:click={loadCatalog}>Повторить</button>
+		</div>
+	{/if}
+
 	{#if heroLoading}
 		<div class="hero-sk"><Skeleton h="100%" radius="24px" /></div>
 	{:else}
@@ -148,6 +174,32 @@
 	.hero-sk {
 		height: clamp(380px, 56vh, 560px);
 		margin-bottom: 34px;
+	}
+	.offline {
+		margin-bottom: 28px;
+		padding: 22px 24px;
+		border-radius: 18px;
+		border: 1px solid var(--glass-border);
+		background: var(--alt-background-color);
+	}
+	.offline strong {
+		font-size: 17px;
+	}
+	.offline p {
+		margin: 6px 0 14px;
+		font-size: 13.5px;
+		color: var(--secondary-text-color);
+		max-width: 620px;
+	}
+	.offline button {
+		padding: 10px 18px;
+		border: none;
+		border-radius: 10px;
+		background: var(--primary-color);
+		color: #fff;
+		font-size: 13px;
+		font-weight: 700;
+		cursor: pointer;
 	}
 	@media (max-width: 768px) {
 		.home {
