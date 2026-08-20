@@ -40,7 +40,7 @@
 	}
 	@media (max-width: 768px) {
 		.toast {
-			bottom: calc(74px + env(safe-area-inset-bottom, 0));
+			bottom: calc(68px + var(--safe-bottom, 0px));
 		}
 	}
 </style>

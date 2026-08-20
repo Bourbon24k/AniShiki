@@ -99,7 +99,7 @@
 		background: var(--background-color);
 	}
 	.app.mobile .viewport:not(.full) {
-		/* высота .mnav = 62px + safe-area; добавляем комфортный зазор сверху от меню */
-		padding-bottom: calc(62px + 28px + env(safe-area-inset-bottom, 0));
+		/* высота .mnav = 56px + зона безопасности, плюс небольшой зазор */
+		padding-bottom: calc(56px + 12px + var(--safe-bottom, 0px));
 	}
 </style>

@@ -232,7 +232,7 @@
 		.hero {
 			height: 460px;
 			border-radius: 0;
-			margin: -10px -12px 24px;
+			margin: 0 -12px 24px;
 		}
 		.content {
 			padding: 24px 18px 28px;

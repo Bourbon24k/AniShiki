@@ -155,7 +155,7 @@
 		}
 		.hero-sk {
 			height: 460px;
-			margin: -10px -12px 24px;
+			margin: 0 -12px 24px;
 		}
 	}
 </style>

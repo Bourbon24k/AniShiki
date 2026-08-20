@@ -65,7 +65,7 @@
 		position: fixed;
 		left: 12px;
 		right: 12px;
-		bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+		bottom: calc(68px + var(--safe-bottom, 0px));
 		z-index: 60;
 		display: flex;
 		align-items: center;

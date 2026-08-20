@@ -54,8 +54,8 @@
 		bottom: 0;
 		left: 0;
 		right: 0;
-		height: calc(62px + env(safe-area-inset-bottom, 0));
-		padding-bottom: env(safe-area-inset-bottom, 0);
+		height: calc(56px + var(--safe-bottom, 0px));
+		padding-bottom: var(--safe-bottom, 0px);
 		border-top: 1px solid var(--glass-border);
 		z-index: 100;
 	}
