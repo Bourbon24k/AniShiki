@@ -3,9 +3,11 @@
 	import { thumb } from '$lib/utils';
 	export let collection;
 	$: cover = thumb(collection?.image || collection?.releases?.[0]?.image, { w: 400 });
+	// Коллекции аккаунта сайта живут на своём маршруте: id у них uuid, а не число.
+	$: href = collection?.site ? `/c/${collection.id}` : `/collection/${collection.id}`;
 </script>
 
-<a class="ccard" href={`/collection/${collection.id}`}>
+<a class="ccard" {href}>
 	<div class="cover">
 		{#if cover}
 			<img src={cover} alt="" referrerpolicy="no-referrer" loading="lazy" decoding="async" />
@@ -16,8 +18,13 @@
 		<div class="overlay">
 			<h3>{collection.title}</h3>
 			<div class="meta">
-				<span><Icon name="bookmark" size={13} /> {collection.favorites_count ?? 0}</span>
-				<span>💬 {collection.comment_count ?? 0}</span>
+				{#if collection.site}
+					<span><Icon name="collection" size={13} /> {collection.release_count ?? 0}</span>
+					{#if !collection.is_public}<span>Скрытая</span>{/if}
+				{:else}
+					<span><Icon name="bookmark" size={13} /> {collection.favorites_count ?? 0}</span>
+					<span>💬 {collection.comment_count ?? 0}</span>
+				{/if}
 			</div>
 		</div>
 	</div>

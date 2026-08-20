@@ -9,7 +9,7 @@
 {:else}
 	<div class="grid">
 		{#each profiles as p (p.id)}
-			<a class="pcard" href={`/profile/${p.id}`}>
+			<a class="pcard" href={typeof p.id === 'string' && p.id.includes('-') ? `/u/${p.id}` : `/profile/${p.id}`}>
 				<div class="ava">
 					{#if p.avatar}
 						<img src={p.avatar} alt="" referrerpolicy="no-referrer" />

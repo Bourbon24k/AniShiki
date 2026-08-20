@@ -1,6 +1,8 @@
 import { get } from 'svelte/store';
 import { supabase } from '$lib/supabase';
 import { siteSession } from '$lib/stores/auth';
+import { notify } from '$lib/notifications';
+import { currentSiteName } from '$lib/stores/auth';
 
 // Система друзей для аккаунтов сайта (Supabase, таблица friendships).
 
@@ -74,6 +76,11 @@ export async function sendRequest(userId) {
 		.from('friendships')
 		.upsert({ requester: uid(), addressee: userId, status: 'pending' });
 	if (error) throw error;
+	notify(userId, {
+		type: 'friend_request',
+		title: `${currentSiteName() || 'Пользователь'} хочет добавить вас в друзья`,
+		url: '/friends'
+	});
 }
 
 /** Ответить на входящую заявку. */
@@ -85,6 +92,11 @@ export async function respondRequest(requesterId, accept) {
 			.update({ status: 'accepted' })
 			.eq('requester', requesterId)
 			.eq('addressee', uid());
+		notify(requesterId, {
+			type: 'friend_accepted',
+			title: `${currentSiteName() || 'Пользователь'} принял вашу заявку в друзья`,
+			url: `/u/${uid()}`
+		});
 	} else {
 		await supabase.from('friendships').delete().eq('requester', requesterId).eq('addressee', uid());
 	}

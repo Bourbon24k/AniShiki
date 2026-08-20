@@ -25,6 +25,7 @@
 	import Spinner from '$lib/components/Spinner.svelte';
 	import AnimeCard from '$lib/components/AnimeCard.svelte';
 	import BookmarkButton from '$lib/components/BookmarkButton.svelte';
+	import CollectionPicker from '$lib/components/CollectionPicker.svelte';
 	import Comments from '$lib/components/Comments.svelte';
 	import SiteComments from '$lib/components/SiteComments.svelte';
 	import Lightbox from '$lib/components/Lightbox.svelte';
@@ -255,6 +256,9 @@
 						<button class="icon-btn" class:fav={isFavorite} on:click={toggleFavorite} aria-label="В избранное">
 							<Icon name={isFavorite ? 'bookmark' : 'bookmarkAdd'} size={20} />
 						</button>
+						{#if !$userToken && $siteSession}
+							<CollectionPicker {release} />
+						{/if}
 					</div>
 
 					<div class="rate">

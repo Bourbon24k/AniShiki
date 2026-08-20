@@ -12,6 +12,8 @@
 	import Toast from '$lib/components/Toast.svelte';
 	import InstallBanner from '$lib/components/InstallBanner.svelte';
 	import { initPwa } from '$lib/pwa';
+	import { authReady, siteSession } from '$lib/stores/auth';
+	import { unreadCount, syncEpisodeNotifications } from '$lib/notifications';
 
 	let isMobile = false;
 	$: path = $page.url.pathname;
@@ -25,6 +27,21 @@
 
 	function syncMobile() {
 		isMobile = window.innerWidth <= 768;
+	}
+
+	// Счётчик уведомлений аккаунта сайта: проверяем новые серии и считаем непрочитанное.
+	let badgeFor = undefined;
+	$: if ($authReady && !$userToken) refreshBadge($siteSession?.user?.id ?? null);
+
+	async function refreshBadge(userId) {
+		if (userId === badgeFor) return;
+		badgeFor = userId;
+		if (!userId) {
+			notificationCount.set(0);
+			return;
+		}
+		await syncEpisodeNotifications().catch(() => {});
+		notificationCount.set(await unreadCount().catch(() => 0));
 	}
 
 	onMount(() => {

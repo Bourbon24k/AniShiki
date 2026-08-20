@@ -2,6 +2,13 @@
 	import { onMount } from 'svelte';
 	import { getApi } from '$lib/api';
 	import { userToken, notificationCount, showToast } from '$lib/stores';
+	import { authReady, siteSession } from '$lib/stores/auth';
+	import {
+		listNotifications,
+		markAllRead,
+		removeNotification,
+		syncEpisodeNotifications
+	} from '$lib/notifications';
 	import { returnTimeString } from '$lib/utils';
 	import Icon from '$lib/components/Icon.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
@@ -11,6 +18,39 @@
 	let loading = true;
 	let loadingMore = false;
 	let hasMore = true;
+
+	// Аккаунт сайта: свои уведомления из Supabase вместо ленты Anixart.
+	$: siteOnly = !$userToken && !!$siteSession;
+	let siteFor = undefined;
+	$: if ($authReady && siteOnly) loadSite($siteSession?.user?.id ?? null);
+
+	async function loadSite(userId) {
+		if (userId === siteFor) return;
+		siteFor = userId;
+		loading = true;
+		// Заодно проверяем новые серии у тайтлов из «Смотрю» (сама себя троттлит).
+		await syncEpisodeNotifications().catch(() => {});
+		items = await listNotifications().catch((e) => {
+			console.error('notifications', e);
+			return [];
+		});
+		hasMore = false;
+		loading = false;
+		markAllRead().catch(() => {});
+		notificationCount.set(0);
+	}
+
+	/** Иконка по типу события аккаунта сайта. */
+	function siteIcon(type) {
+		if (type === 'friend_request' || type === 'friend_accepted') return 'friends';
+		if (type === 'comment') return 'feed';
+		return 'notification';
+	}
+
+	async function dropSite(id) {
+		items = items.filter((n) => n.id !== id);
+		await removeNotification(id).catch(() => {});
+	}
 
 	function describe(n) {
 		const who = n.by_profile?.login || n.profile?.login || '';
@@ -34,6 +74,7 @@
 	}
 
 	async function load(reset = true) {
+		if (siteOnly) return; // своя ветка выше
 		if (!$userToken) {
 			loading = false;
 			return;
@@ -66,6 +107,13 @@
 		load(false);
 	}
 	async function clearAll() {
+		if (siteOnly) {
+			const ids = items.map((n) => n.id);
+			items = [];
+			await Promise.all(ids.map((id) => removeNotification(id).catch(() => {})));
+			showToast('Уведомления очищены', 'success');
+			return;
+		}
 		try {
 			await getApi().notification.removeAllNotifications();
 			items = [];
@@ -90,7 +138,36 @@
 			{#if items.length}<button class="clear" on:click={clearAll}>Очистить всё</button>{/if}
 		</div>
 
-		{#if !$userToken}
+		{#if siteOnly}
+			{#if loading}
+				<Spinner center label="Загрузка…" />
+			{:else if items.length === 0}
+				<p class="empty">Пока ничего не происходило</p>
+			{:else}
+				<div class="list">
+					{#each items as n (n.id)}
+						<a class="notif" class:new={!n.is_read} href={n.url || '#'}>
+							<div class="ico">
+								{#if n.image}<img class="poster" src={n.image} alt="" referrerpolicy="no-referrer" />
+								{:else}<Icon name={siteIcon(n.type)} size={20} />{/if}
+							</div>
+							<div class="body">
+								<p>{n.title}</p>
+								{#if n.body}<p class="sub">{n.body}</p>{/if}
+								<span class="time">{returnTimeString(new Date(n.created_at).getTime())}</span>
+							</div>
+							<button
+								class="drop"
+								aria-label="Убрать"
+								on:click|preventDefault|stopPropagation={() => dropSite(n.id)}
+							>
+								<Icon name="close" size={15} />
+							</button>
+						</a>
+					{/each}
+				</div>
+			{/if}
+		{:else if !$userToken}
 			<div class="empty"><p>Войдите, чтобы видеть уведомления</p><a class="btn" href="/login">Войти</a></div>
 		{:else if loading}
 			<Spinner center label="Загрузка…" />
@@ -134,6 +211,27 @@
 		align-items: center;
 		justify-content: space-between;
 		margin-bottom: 20px;
+	}
+	.sub {
+		margin-top: 2px;
+		font-size: 13px;
+		color: var(--secondary-text-color);
+	}
+	.drop {
+		flex-shrink: 0;
+		width: 30px;
+		height: 30px;
+		display: grid;
+		place-items: center;
+		border: none;
+		background: transparent;
+		color: var(--third-text-color, var(--secondary-text-color));
+		border-radius: 8px;
+		cursor: pointer;
+	}
+	.drop:hover {
+		background: var(--background-color);
+		color: var(--text-color);
 	}
 	h1 {
 		font-size: 30px;

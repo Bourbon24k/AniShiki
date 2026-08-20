@@ -2,6 +2,8 @@
 	import { onMount } from 'svelte';
 	import { getApi } from '$lib/api';
 	import { userToken } from '$lib/stores';
+	import { authReady, siteSession } from '$lib/stores/auth';
+	import { friendsActivity } from '$lib/sitedata';
 	import { returnTimeString } from '$lib/utils';
 	import Icon from '$lib/components/Icon.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
@@ -12,6 +14,26 @@
 	let loadingMore = false;
 	let hasMore = true;
 	let tab = 'latest';
+
+	// Аккаунт сайта: вкладка с активностью друзей поверх таблицы activity.
+	$: hasSite = !$userToken && !!$siteSession;
+	let activity = [];
+	let activityLoading = false;
+	let activityFor = undefined;
+	$: if ($authReady && hasSite) loadActivity($siteSession?.user?.id ?? null);
+
+	async function loadActivity(userId) {
+		if (userId === activityFor) return;
+		activityFor = userId;
+		activityLoading = true;
+		activity = await friendsActivity().catch((e) => {
+			console.error('activity', e);
+			return [];
+		});
+		activityLoading = false;
+	}
+
+	const ACTIVITY_VERB = { watch: 'смотрит', rate: 'оценил', list: 'добавил в список' };
 
 	function blocksText(a) {
 		const blocks = a?.payload?.blocks || [];
@@ -80,10 +102,38 @@
 					<button class:active={tab === 'latest'} on:click={() => setTab('latest')}>Все</button>
 					<button class:active={tab === 'my'} on:click={() => setTab('my')}>Мои подписки</button>
 				</div>
+			{:else if hasSite}
+				<div class="tabs">
+					<button class:active={tab === 'latest'} on:click={() => setTab('latest')}>Все</button>
+					<button class:active={tab === 'friends'} on:click={() => (tab = 'friends')}>Друзья</button>
+				</div>
 			{/if}
 		</div>
 
-		{#if loading}
+		{#if tab === 'friends'}
+			{#if activityLoading}
+				<Spinner center label="Загрузка…" />
+			{:else if activity.length === 0}
+				<p class="empty">Друзья пока ничего не смотрели. Найти их можно в разделе «Друзья».</p>
+			{:else}
+				<div class="list">
+					{#each activity as a (a.id)}
+						<a class="act glass" href={`/release/${a.release_id}`}>
+							{#if a.image}
+								<img class="cover" src={a.image} alt="" referrerpolicy="no-referrer" loading="lazy" />
+							{/if}
+							<div class="act-body">
+								<span class="who">{a.author?.username || 'Пользователь'}</span>
+								<p>
+									{ACTIVITY_VERB[a.type] || 'отметил'} «{a.title || 'тайтл'}»{a.meta ? ` · ${a.meta}` : ''}
+								</p>
+								<span class="time">{returnTimeString(new Date(a.created_at).getTime())}</span>
+							</div>
+						</a>
+					{/each}
+				</div>
+			{/if}
+		{:else if loading}
 			<Spinner center label="Загрузка ленты…" />
 		{:else if articles.length === 0}
 			<p class="empty">Лента пуста</p>
@@ -126,6 +176,41 @@
 </div>
 
 <style>
+	.act {
+		display: flex;
+		gap: 14px;
+		padding: 14px;
+		border-radius: 16px;
+		color: inherit;
+	}
+	.act .cover {
+		width: 54px;
+		height: 78px;
+		object-fit: cover;
+		border-radius: 10px;
+		flex-shrink: 0;
+	}
+	.act-body {
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+	}
+	.act-body .who {
+		font-size: 14px;
+		font-weight: 700;
+	}
+	.act-body p {
+		margin-top: 3px;
+		font-size: 13.5px;
+		color: var(--secondary-text-color);
+	}
+	.act-body .time {
+		margin-top: 4px;
+		font-size: 12px;
+		color: var(--secondary-text-color);
+	}
+
 	.page {
 		height: 100%;
 		overflow-y: auto;

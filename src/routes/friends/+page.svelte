@@ -262,7 +262,10 @@
 					<div class="req-list">
 						{#each requests as p (p.id)}
 							<div class="req">
-								<a href={`/profile/${p.id}`} class="req-user">
+								<a
+									href={typeof p.id === 'string' && p.id.includes('-') ? `/u/${p.id}` : `/profile/${p.id}`}
+									class="req-user"
+								>
 									{#if p.avatar}<img src={p.avatar} alt="" referrerpolicy="no-referrer" />{/if}
 									<span>{p.login}</span>
 								</a>
