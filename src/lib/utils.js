@@ -72,7 +72,7 @@ export const collectionSortValues = [
 /** Типы каталога для главной/поиска (status_id / category_id для release.filter). */
 export const releaseTypes = [
 	{ id: 0, label: 'Последние', filter: { sort: 0 } },
-	{ id: 5, label: 'Популярные', filter: { sort: 1 } },
+	{ id: 5, label: 'Популярные', filter: { sort: 3 } },
 	{ id: 1, label: 'Онгоинги', filter: { sort: 0, status_id: 2 } },
 	{ id: 2, label: 'Анонсы', filter: { sort: 0, status_id: 3 } },
 	{ id: 3, label: 'Завершённые', filter: { sort: 0, status_id: 1 } },

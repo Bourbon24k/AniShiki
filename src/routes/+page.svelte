@@ -80,8 +80,11 @@
 		const api = getApi();
 		if (!api) return;
 
-		// Hero — популярное.
-		const pop = await safe(api.release.filter(0, { sort: 1 }, true));
+		// Hero и «Сейчас популярно» — реальная популярность (sort 3), суженная до
+		// текущего и прошлого года: sort 1 — это «по оценке», вечный топ, где
+		// «сейчас» нет вообще (в выдаче висят тайтлы 1999–2000 годов).
+		const year = new Date().getFullYear();
+		const pop = await safe(api.release.filter(0, { sort: 3, start_year: year - 1, end_year: year }, true));
 		popular = pop;
 		heroItems = pop.slice(0, 6);
 		heroLoading = false;

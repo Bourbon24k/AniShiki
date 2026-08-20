@@ -101,7 +101,8 @@
 			// /discover/watching — глобальный блок «сейчас смотрят», не личный список
 			safe(api.discover.getWatching(0)),
 			safe(api.release.filter(0, { sort: 1 }, true)),
-			safe(api.release.filter(0, { sort: 1, category_id: 2 }, true))
+			// «Популярные фильмы» — по популярности, а не по оценке
+			safe(api.release.filter(0, { sort: 3, category_id: 2 }, true))
 		]);
 		loading = false;
 	});
