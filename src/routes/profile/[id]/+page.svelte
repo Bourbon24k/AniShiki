@@ -31,13 +31,13 @@
 	let votesLoading = false;
 	let history = [];
 
-	/** Сколько последних дней показывать на графике динамики. */
+	/** Сколько последних дней показывать на графике динамики (окно API — 31 день). */
 	const RANGES = [
-		{ id: 10, label: '10 дней' },
-		{ id: 30, label: '30 дней' },
-		{ id: 0, label: 'Всё время' }
+		{ id: 7, label: 'Неделя' },
+		{ id: 14, label: '2 недели' },
+		{ id: 31, label: 'Месяц' }
 	];
-	let range = 30;
+	let range = 14;
 
 	$: watch = formatWatchTime(profile?.watched_time);
 
@@ -81,12 +81,45 @@
 			].filter((group) => group.items.length)
 		: [];
 
-	$: allDynamics = profile?.watch_dynamics || [];
-	$: dynamics = (range > 0 ? allDynamics.slice(-range) : allDynamics).map((d) => ({
-		value: d.count,
-		label: shortDate(d.timestamp),
-		full: fullDate(d.timestamp)
-	}));
+	$: dynamics = buildDynamics(profile?.watch_dynamics, range);
+	// Пустой график (одни нули) показывать незачем — он ничего не сообщает.
+	$: hasDynamics = (profile?.watch_dynamics || []).some((d) => Number(d?.count) > 0);
+
+	/**
+	 * Динамика просмотра.
+	 *
+	 * В API это не временной ряд, а ровно 31 ячейка по числам месяца. Метка
+	 * времени в ячейке — когда её в последний раз трогали, поэтому у дней без
+	 * недавнего просмотра там висят даты годичной давности. Если рисовать
+	 * график прямо по ним, подписи разъезжаются на годы — что и происходило.
+	 *
+	 * Поэтому строим окно последних N дней от сегодня и подставляем в него
+	 * значения тех ячеек, чья метка попадает в этот же календарный день.
+	 * Остальные дни — честные нули.
+	 */
+	function buildDynamics(raw, days) {
+		const counts = new Map();
+		for (const item of raw || []) {
+			const ms = Number(item?.timestamp) * 1000;
+			if (!Number.isFinite(ms) || ms <= 0) continue;
+			counts.set(dayKey(new Date(ms)), Number(item.count) || 0);
+		}
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
+		const points = [];
+		for (let back = days - 1; back >= 0; back--) {
+			const date = new Date(today);
+			date.setDate(today.getDate() - back);
+			points.push({
+				value: counts.get(dayKey(date)) ?? 0,
+				label: shortDate(date),
+				full: fullDate(date)
+			});
+		}
+		return points;
+	}
+
+	const dayKey = (date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 
 	/** «Закладки» — это все списки разом, а не избранное: там свой счётчик. */
 	$: bookmarksTotal = lists.reduce((sum, item) => sum + (Number(item.value) || 0), 0);
@@ -103,14 +136,12 @@
 			]
 		: [];
 
-	function shortDate(timestamp) {
-		const d = new Date(Number(timestamp) * 1000);
-		return `${d.getDate()} ${d.toLocaleDateString('ru-RU', { month: 'short' })}`;
+	function shortDate(date) {
+		return `${date.getDate()} ${date.toLocaleDateString('ru-RU', { month: 'short' })}`;
 	}
 
-	function fullDate(timestamp) {
-		const d = new Date(Number(timestamp) * 1000);
-		return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+	function fullDate(date) {
+		return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', weekday: 'short' });
 	}
 
 	async function load(id) {
@@ -339,17 +370,15 @@
 					</div>
 				</section>
 
-				{#if dynamics.length > 1}
+				{#if hasDynamics}
 					<section class="card">
 						<div class="card-head">
 							<h2>Динамика просмотра серий</h2>
 							<div class="ranges">
 								{#each RANGES as r}
-									{#if r.id === 0 || allDynamics.length > r.id}
-										<button class="range" class:on={range === r.id} on:click={() => (range = r.id)}>
-											{r.label}
-										</button>
-									{/if}
+									<button class="range" class:on={range === r.id} on:click={() => (range = r.id)}>
+										{r.label}
+									</button>
 								{/each}
 							</div>
 						</div>
@@ -882,8 +911,15 @@
 	}
 
 	@media (max-width: 768px) {
+		/* На телефоне обложка во весь рост оставляла пустую полосу в пол-экрана. */
+		.cover {
+			height: 210px;
+		}
+		.cover::after {
+			height: 150px;
+		}
 		.container {
-			margin-top: -96px;
+			margin-top: -142px;
 			padding: 0 14px 40px;
 		}
 		.badges {

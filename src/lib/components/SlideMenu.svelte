@@ -67,6 +67,15 @@
 				{/if}
 			{/each}
 		</div>
+
+		<!-- Подвал занимает пустоту под списком: раньше там была голая чернота. -->
+		<div class="foot">
+			<img class="fmark" src="/favicon.svg" alt="" width="34" height="34" />
+			<div class="ftext">
+				<b>AniShiki</b>
+				<span>Неофициальный клиент Anixart</span>
+			</div>
+		</div>
 	</nav>
 {/if}
 
@@ -90,6 +99,10 @@
 		flex-direction: column;
 		overflow-y: auto;
 		border-right: 1px solid var(--glass-border);
+		/* Без верхнего отступа шапка меню уезжает под статус-бар и читается
+		   как размытая полоса. Снизу — индикатор «домой». */
+		padding-top: var(--safe-top, 0px);
+		padding-bottom: var(--safe-bottom, 0px);
 	}
 	.head {
 		display: flex;
@@ -150,7 +163,7 @@
 		font-weight: 700;
 	}
 	.list {
-		padding: 6px 12px 24px;
+		padding: 6px 12px 16px;
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
@@ -169,5 +182,34 @@
 	.row.active {
 		color: var(--primary-color);
 		background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+	}
+
+	.foot {
+		margin-top: auto;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 16px;
+		border-top: 1px solid var(--glass-border);
+	}
+	.fmark {
+		width: 34px;
+		height: 34px;
+		flex-shrink: 0;
+		opacity: 0.9;
+	}
+	.ftext {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+	}
+	.ftext b {
+		font-size: 14px;
+		font-weight: 700;
+	}
+	.ftext span {
+		font-size: 11.5px;
+		line-height: 1.35;
+		color: var(--third-text-color);
 	}
 </style>
