@@ -173,9 +173,6 @@ export function initShell() {
 		const value = detectStandalone();
 		standalone.set(value);
 		root.classList.toggle('standalone', value);
-		// Отступ под индикатор «домой» нужен только в standalone: в Safari его
-		// закрывает собственная панель браузера, и лишний отступ выглядит дырой.
-		root.style.setProperty('--safe-bottom', value ? 'env(safe-area-inset-bottom, 0px)' : '0px');
 	};
 	applyStandalone();
 
