@@ -123,6 +123,18 @@ html {
 	background-color: var(--background-color);
 }
 
+/* Только для установленного приложения: у WebKit есть собственная единица
+   высоты окна, и она надёжнее vh — при расхождении вёрстка не дотягивалась
+   до нижнего края, и там оставалась полоса. В обычной вкладке не трогаем:
+   там расхождение как раз полезное, его закрывает панель браузера. */
+html.standalone {
+	height: -webkit-fill-available;
+}
+html.standalone body {
+	min-height: 100vh;
+	min-height: -webkit-fill-available;
+}
+
 body {
 	font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 	background-color: var(--background-color);
