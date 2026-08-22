@@ -100,6 +100,13 @@
 		opacity: 1;
 		transform: scale(1);
 	}
+	/* Картинка растворяется у нижнего края. Раньше она обрывалась ровной
+	   горизонтальной линией — ниже начинался чистый фон страницы, и стык
+	   читался как шов. */
+	.bg {
+		-webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 82%, transparent 100%);
+		mask-image: linear-gradient(to bottom, #000 0%, #000 82%, transparent 100%);
+	}
 	.grad {
 		position: absolute;
 		inset: 0;
@@ -250,6 +257,25 @@
 			padding: 32px;
 		}
 	}
+	/* В широком окне гасим и боковые края: карточка перестаёт быть резким
+	   прямоугольником и мягко уходит в страницу со всех сторон. */
+	@media (min-width: 769px) {
+		.bg {
+			-webkit-mask-image: radial-gradient(
+				145% 165% at 58% 42%,
+				#000 66%,
+				rgba(0, 0, 0, 0.72) 86%,
+				transparent 100%
+			);
+			mask-image: radial-gradient(
+				145% 165% at 58% 42%,
+				#000 66%,
+				rgba(0, 0, 0, 0.72) 86%,
+				transparent 100%
+			);
+		}
+	}
+
 	@media (max-width: 768px) {
 		.hero {
 			min-height: 440px;
