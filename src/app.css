@@ -298,11 +298,15 @@ button {
 	}
 }
 
+/* fill-mode именно backwards, а не both: с both у элемента навсегда остаётся
+   вычисленный transform (пусть и единичная матрица), а любой transform делает
+   элемент точкой отсчёта для position: fixed — модалки и лайтбокс уезжали
+   к началу страницы вместо экрана. */
 .page-enter {
-	animation: push-in 0.26s cubic-bezier(0.22, 0.9, 0.26, 1) both;
+	animation: push-in 0.26s cubic-bezier(0.22, 0.9, 0.26, 1) backwards;
 }
 .page-enter-back {
-	animation: pop-in 0.26s cubic-bezier(0.22, 0.9, 0.26, 1) both;
+	animation: pop-in 0.26s cubic-bezier(0.22, 0.9, 0.26, 1) backwards;
 }
 
 /* Тяжёлые эффекты стоит гасить: на телефоне они дают лишние кадры. */

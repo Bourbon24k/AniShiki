@@ -26,6 +26,7 @@
 	import AnimeCard from '$lib/components/AnimeCard.svelte';
 	import BookmarkButton from '$lib/components/BookmarkButton.svelte';
 	import CollectionPicker from '$lib/components/CollectionPicker.svelte';
+	import Sheet from '$lib/components/Sheet.svelte';
 	import Comments from '$lib/components/Comments.svelte';
 	import SiteComments from '$lib/components/SiteComments.svelte';
 	import Lightbox from '$lib/components/Lightbox.svelte';
@@ -66,6 +67,50 @@
 		const m = String(url || '').match(/(?:youtube\.com\/(?:.*v=|vi\/|embed\/)|youtu\.be\/|\/vi\/)([\w-]{11})/);
 		return m ? m[1] : null;
 	}
+	/** Anixart отдаёт ссылки на превью по http — на https-странице их блокируют. */
+	function secure(url) {
+		return String(url || '').replace(/^http:\/\//i, 'https://');
+	}
+
+	/* ── Видео релиза ─────────────────────────────────────────────────────
+	   video_banners — это не ролики, а категории («Трейлеры», «Опенинги»…),
+	   и картинка у них взята от одного случайного видео. Раньше по нажатию
+	   играло именно оно, а сам список посмотреть было негде. Теперь баннер
+	   открывает список своей категории. */
+
+	/** Открытая категория: { id, name } или null. */
+	let videoCategory = null;
+	let videoList = [];
+	let videoLoading = false;
+
+	async function openVideoCategory(banner) {
+		videoCategory = { id: Number(banner.value), name: banner.name };
+		videoList = [];
+		videoLoading = true;
+		try {
+			const data = await getApi().release.getVideoInCategory({
+				id: releaseId,
+				categoryId: videoCategory.id,
+				page: 0
+			});
+			videoList = data?.content || [];
+		} catch (e) {
+			console.error('videos', e);
+			showToast('Не удалось загрузить видео', 'error');
+		}
+		videoLoading = false;
+	}
+
+	function playVideo(video) {
+		const id = ytId(video.player_url) || ytId(video.url) || ytId(video.image);
+		if (id) {
+			trailerId = id;
+			videoCategory = null;
+			return;
+		}
+		// Не YouTube — открываем у хостинга, встроить его мы не умеем.
+		if (video.url) window.open(secure(video.url), '_blank', 'noopener,noreferrer');
+	}
 
 	$: status = getStatusInfo(release?.status);
 	$: genres = parseGenres(release?.genres, 12);
@@ -77,8 +122,8 @@
 			);
 	$: franchise = release?.related && release.related.id ? release.related : null;
 	$: videoBanners = (release?.video_banners || [])
-		.map((b) => ({ ...b, yt: ytId(b.image) }))
-		.filter((b) => b.yt);
+		.map((b) => ({ ...b, image: secure(b.image) }))
+		.filter((b) => b.value != null && b.image);
 	$: listStats = release
 		? [
 				{ label: 'Смотрят', value: release.watching_count, color: 'var(--watching-color)' },
@@ -324,7 +369,7 @@
 					<h2>Трейлеры и видео</h2>
 					<div class="video-row no-scrollbar">
 						{#each videoBanners as b}
-							<button class="video-thumb" on:click={() => (trailerId = b.yt)}>
+							<button class="video-thumb" on:click={() => openVideoCategory(b)}>
 								<img src={b.image} alt={b.name} referrerpolicy="no-referrer" loading="lazy" />
 								<span class="play-ic"><Icon name="play" size={26} /></span>
 								<span class="vt-name">{b.name}</span>
@@ -386,6 +431,34 @@
 	</div>
 
 	<Lightbox images={screenshots} bind:index={lbIndex} bind:open={lbOpen} />
+
+	<Sheet
+		open={!!videoCategory}
+		title={videoCategory?.name || 'Видео'}
+		tall
+		on:close={() => (videoCategory = null)}
+	>
+		{#if videoLoading}
+			<Spinner center label="Загрузка видео…" />
+		{:else if !videoList.length}
+			<p class="vempty">В этой категории пока пусто</p>
+		{:else}
+			<div class="vlist">
+				{#each videoList as v (v.id)}
+					<button class="vrow" on:click={() => playVideo(v)}>
+						<span class="vthumb">
+							<img src={secure(v.image)} alt="" referrerpolicy="no-referrer" loading="lazy" />
+							<span class="play-ic"><Icon name="play" size={18} /></span>
+						</span>
+						<span class="vinfo">
+							<span class="vtitle">{v.title}</span>
+							<span class="vmeta">{v.hosting?.name || ''}</span>
+						</span>
+					</button>
+				{/each}
+			</div>
+		{/if}
+	</Sheet>
 
 	{#if trailerId}
 		<div class="yt-modal" on:click={() => (trailerId = null)}>
@@ -819,6 +892,67 @@
 		display: grid;
 		place-items: center;
 		color: #fff;
+	}
+
+	/* Список видео внутри категории */
+	.vlist {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.vrow {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		width: 100%;
+		padding: 8px;
+		border: 1px solid var(--glass-border);
+		border-radius: 14px;
+		background: var(--alt-background-color);
+		color: var(--text-color);
+		text-align: left;
+		cursor: pointer;
+	}
+	.vrow:hover {
+		border-color: var(--primary-color);
+	}
+	.vthumb {
+		position: relative;
+		width: 128px;
+		min-width: 128px;
+		aspect-ratio: 16 / 9;
+		border-radius: 10px;
+		overflow: hidden;
+		background: var(--background-color);
+	}
+	.vthumb img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+	.vinfo {
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+	}
+	.vtitle {
+		font-size: 14px;
+		font-weight: 600;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+	.vmeta {
+		font-size: 12px;
+		color: var(--third-text-color);
+	}
+	.vempty {
+		padding: 40px 0;
+		text-align: center;
+		color: var(--secondary-text-color);
 	}
 	.play-ic :global(svg) {
 		background: rgba(0, 0, 0, 0.55);

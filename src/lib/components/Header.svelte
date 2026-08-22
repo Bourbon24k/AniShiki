@@ -20,7 +20,7 @@
 	}
 </script>
 
-<header class="header glass">
+<header class="header">
 	<div class="side">
 		{#if showBack}
 			<button class="ico-btn" on:click={back} aria-label="Назад">
@@ -56,6 +56,10 @@
 		align-items: center;
 		justify-content: space-between;
 		z-index: 50;
+		/* Сплошной фон страницы вместо стекла: размытие подкрашивало полосу
+		   под шапкой, и на экранах с обложкой её край читался как шов.
+		   Стык прячет уже сама обложка — она уходит в этот же цвет. */
+		background: var(--background-color);
 	}
 	.side {
 		display: flex;

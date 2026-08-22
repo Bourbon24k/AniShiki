@@ -88,7 +88,13 @@
 		border-radius: 16px;
 		overflow: hidden;
 		transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s ease;
-		animation: fadeInUp 0.4s ease both;
+	}
+	/* Карточки за пределами экрана не верстаются и не рисуются. На списках
+	   в сотню тайтлов это основная экономия. `auto` в intrinsic-size запоминает
+	   последний размер, поэтому полоса прокрутки не скачет. */
+	.card.grid {
+		content-visibility: auto;
+		contain-intrinsic-size: auto 300px;
 	}
 	.card:hover {
 		transform: translateY(-6px);
@@ -142,6 +148,8 @@
 		pointer-events: none;
 	}
 
+	/* Без backdrop-filter: три размытия на карточку — это сотни слоёв на
+	   странице списка, и именно они роняли прокрутку. Плотного фона хватает. */
 	.status,
 	.age,
 	.grade,
@@ -151,7 +159,6 @@
 		border-radius: 7px;
 		font-size: 10.5px;
 		font-weight: 700;
-		backdrop-filter: blur(6px);
 	}
 	.status {
 		top: 8px;
@@ -163,7 +170,7 @@
 		top: 8px;
 		right: 8px;
 		color: #fff;
-		background: rgba(0, 0, 0, 0.6);
+		background: rgba(0, 0, 0, 0.72);
 	}
 	.grade {
 		bottom: 8px;
@@ -172,7 +179,7 @@
 		align-items: center;
 		gap: 3px;
 		color: #fff;
-		background: rgba(0, 0, 0, 0.62);
+		background: rgba(0, 0, 0, 0.74);
 	}
 	/* Своя оценка важнее общей — показываем её вместо среднего балла. */
 	.my-vote {

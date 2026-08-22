@@ -446,84 +446,38 @@
 {/if}
 
 <style>
+	/* Обложка: размытый аватар в полную силу, затухающий книзу.
+	   Ничего не притеняем — от затемнения шапка выглядела грязным пятном. */
 	.cover {
-		height: 320px;
+		height: 300px;
 		position: relative;
 		overflow: hidden;
 		background: var(--background-color);
 	}
-	/* Размытый аватар под шапкой: даёт профилю собственный цвет вместо
-	   ровной черноты. Если аватара нет, остаётся фирменный градиент.
-	   Маска гасит саму картинку — так стык не читается даже вблизи. */
 	.cover-art {
 		position: absolute;
 		inset: 0;
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
-		transform: scale(1.45);
-		filter: blur(64px) saturate(150%);
-		opacity: 0.6;
-		-webkit-mask-image: linear-gradient(
-			to bottom,
-			#000 0%,
-			rgba(0, 0, 0, 0.92) 38%,
-			rgba(0, 0, 0, 0.6) 62%,
-			rgba(0, 0, 0, 0.22) 82%,
-			transparent 100%
-		);
-		mask-image: linear-gradient(
-			to bottom,
-			#000 0%,
-			rgba(0, 0, 0, 0.92) 38%,
-			rgba(0, 0, 0, 0.6) 62%,
-			rgba(0, 0, 0, 0.22) 82%,
-			transparent 100%
-		);
+		/* Увеличение прячет размытые края картинки за границами блока. */
+		transform: scale(1.25);
+		filter: blur(38px) saturate(145%);
 	}
-	/* Фирменная подсветка поверх аватара — иначе он выглядит просто грязным пятном. */
-	.cover::before {
-		content: '';
-		position: absolute;
-		inset: 0;
-		background:
-			radial-gradient(
-				100% 120% at 12% -15%,
-				color-mix(in srgb, var(--primary-color) 50%, transparent),
-				transparent 62%
-			),
-			linear-gradient(
-				135deg,
-				color-mix(in srgb, var(--primary-color) 26%, transparent) 0%,
-				transparent 58%
-			);
-		-webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.5) 60%, transparent 100%);
-		mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.5) 60%, transparent 100%);
-	}
-	/* Плавный сход в фон страницы: одной линейной ступени было мало —
-	   переход читался полосой. Стопы подобраны под плавное затухание. */
+	/* Затухание отдельным слоем, а не маской на картинке: маска масштабируется
+	   вместе с ней, её «прозрачный» конец уезжает за границу блока, и низ
+	   обложки обрывался резкой полосой. Этот слой не масштабируется. */
 	.cover::after {
 		content: '';
 		position: absolute;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		height: 220px;
-		background: linear-gradient(
-			to top,
-			var(--background-color) 0%,
-			color-mix(in srgb, var(--background-color) 88%, transparent) 26%,
-			color-mix(in srgb, var(--background-color) 58%, transparent) 52%,
-			color-mix(in srgb, var(--background-color) 24%, transparent) 76%,
-			transparent 100%
-		);
-	}
-	/* Лёгкий отсвет ниже шапки — страница перестаёт быть плоско-чёрной. */
-	.profile {
+		inset: 0;
 		background: linear-gradient(
 			to bottom,
-			color-mix(in srgb, var(--primary-color) 7%, transparent) 0,
-			transparent 620px
+			transparent 0%,
+			transparent 34%,
+			color-mix(in srgb, var(--background-color) 45%, transparent) 62%,
+			color-mix(in srgb, var(--background-color) 82%, transparent) 84%,
+			var(--background-color) 100%
 		);
 	}
 	.container {
@@ -905,6 +859,11 @@
 	section {
 		margin-bottom: 30px;
 	}
+	/* Последний блок не должен добавлять пустоту над нижней панелью. */
+	section:last-child,
+	.card:last-child {
+		margin-bottom: 0;
+	}
 	.err {
 		text-align: center;
 		padding: 80px;
@@ -913,14 +872,13 @@
 	@media (max-width: 768px) {
 		/* На телефоне обложка во весь рост оставляла пустую полосу в пол-экрана. */
 		.cover {
-			height: 210px;
+			height: 250px;
 		}
-		.cover::after {
-			height: 150px;
-		}
+		/* Перекрытие подобрано так, чтобы аватар стоял ниже самой яркой части
+		   обложки: раньше он приходился ровно на её нижнюю кромку. */
 		.container {
-			margin-top: -142px;
-			padding: 0 14px 40px;
+			margin-top: -132px;
+			padding: 0 14px 12px;
 		}
 		.badges {
 			justify-content: center;
