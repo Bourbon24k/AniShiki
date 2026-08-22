@@ -26,9 +26,10 @@
 	let loading = true;
 	let friendBusy = false;
 
-	/** Оценки: в профиле приходит только короткий превью — грузим страницу целиком. */
+	/** Оценки и история: в профиле приходят короткие превью — грузим страницы целиком. */
 	let votes = [];
 	let votesLoading = false;
+	let history = [];
 
 	/** Сколько последних дней показывать на графике динамики. */
 	const RANGES = [
@@ -123,7 +124,25 @@
 			profile = null;
 		}
 		loading = false;
-		if (profile && !profile.is_stats_hidden) loadVotes(id);
+		if (profile && !profile.is_stats_hidden) {
+			loadVotes(id);
+			loadHistory(id);
+		}
+	}
+
+	/**
+	 * Недавно просмотренное. В профиле приходит всего несколько тайтлов;
+	 * свою историю можно догрузить страницей, чужая доступна только превью.
+	 */
+	async function loadHistory(id) {
+		history = profile?.history || [];
+		if (!isMine) return;
+		try {
+			const data = await getApi().release.getHistory(0);
+			if (data?.content?.length) history = data.content;
+		} catch (e) {
+			console.error('history', e);
+		}
 	}
 
 	/** Полная первая страница оценок: в профиле их приходит всего несколько. */
@@ -190,7 +209,11 @@
 	<Spinner center label="Загрузка профиля…" />
 {:else if profile}
 	<div class="profile">
-		<div class="cover"></div>
+		<div class="cover">
+			{#if profile.avatar}
+				<img class="cover-art" src={profile.avatar} alt="" referrerpolicy="no-referrer" aria-hidden="true" />
+			{/if}
+		</div>
 		<div class="container">
 			{#if profile.is_banned || profile.is_perm_banned}
 				<div class="banner danger">
@@ -365,14 +388,14 @@
 				</section>
 			{/if}
 
-			{#if !profile.is_stats_hidden && profile.history?.length}
+			{#if !profile.is_stats_hidden && history.length}
 				<section>
 					<div class="card-head plain">
 						<h2>Недавно просмотренные</h2>
 						<a class="more" href={`/profile/${profileId}/history`}>Вся история <Icon name="chevronRight" size={16} /></a>
 					</div>
 					<div class="grid">
-						{#each profile.history.slice(0, 12) as r (r.id)}<AnimeCard anime={r} type="grid" />{/each}
+						{#each history.slice(0, 18) as r (r.id)}<AnimeCard anime={r} type="grid" />{/each}
 					</div>
 				</section>
 			{/if}
@@ -384,22 +407,38 @@
 
 <style>
 	.cover {
-		height: 230px;
+		height: 240px;
 		position: relative;
-		/* Два слоя: тёплое пятно у левого верхнего угла и общий наклонный
-		   переход. Одного линейного градиента было мало — он гас почти сразу,
-		   и обложка читалась как просто чёрная полоса. */
+		overflow: hidden;
+		background: var(--background-color);
+	}
+	/* Размытый аватар под шапкой: даёт профилю собственный цвет вместо
+	   ровной черноты. Если аватара нет, внизу остаётся фирменный градиент. */
+	.cover-art {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		transform: scale(1.4);
+		filter: blur(52px) saturate(150%);
+		opacity: 0.55;
+	}
+	/* Фирменная подсветка поверх аватара — иначе он выглядит просто грязным пятном. */
+	.cover::before {
+		content: '';
+		position: absolute;
+		inset: 0;
 		background:
 			radial-gradient(
-				120% 150% at 12% -10%,
-				color-mix(in srgb, var(--primary-color) 70%, transparent),
-				transparent 62%
+				110% 140% at 12% -10%,
+				color-mix(in srgb, var(--primary-color) 55%, transparent),
+				transparent 60%
 			),
 			linear-gradient(
 				135deg,
-				color-mix(in srgb, var(--primary-color) 55%, #2a1526) 0%,
-				color-mix(in srgb, var(--primary-color) 24%, var(--background-color)) 58%,
-				var(--background-color) 100%
+				color-mix(in srgb, var(--primary-color) 30%, transparent) 0%,
+				transparent 55%
 			);
 	}
 	/* Обложка растворяется в фоне: без этого внизу оставалась резкая полоса. */
@@ -409,8 +448,17 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		height: 88px;
+		height: 110px;
 		background: linear-gradient(to top, var(--background-color), transparent);
+	}
+	/* Лёгкий отсвет ниже шапки — страница перестаёт быть плоско-чёрной. */
+	.profile {
+		background:
+			linear-gradient(
+				to bottom,
+				color-mix(in srgb, var(--primary-color) 7%, transparent) 0,
+				transparent 560px
+			);
 	}
 	.container {
 		position: relative;
