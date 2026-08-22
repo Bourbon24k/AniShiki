@@ -15,7 +15,7 @@
 	import { haptic } from '$lib/ios';
 	import Icon from '$lib/components/Icon.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
-	import AnimeCard from '$lib/components/AnimeCard.svelte';
+	import ReleaseRow from '$lib/components/ReleaseRow.svelte';
 	import Donut from '$lib/components/Donut.svelte';
 	import AreaChart from '$lib/components/AreaChart.svelte';
 
@@ -135,14 +135,29 @@
 	 * свою историю можно догрузить страницей, чужая доступна только превью.
 	 */
 	async function loadHistory(id) {
-		history = profile?.history || [];
+		history = (profile?.history || []).map(toHistoryCard);
 		if (!isMine) return;
 		try {
 			const data = await getApi().release.getHistory(0);
-			if (data?.content?.length) history = data.content;
+			if (data?.content?.length) history = data.content.map(toHistoryCard);
 		} catch (e) {
 			console.error('history', e);
 		}
+	}
+
+	/**
+	 * Карточка истории: ссылка сразу в плеер, подпись «на чём остановились»
+	 * и полоса прогресса по постеру, если известно общее число серий.
+	 */
+	function toHistoryCard(release) {
+		const position = Number(release?.last_view_episode?.position) || 0;
+		const total = Number(release?.episodes_total) || Number(release?.episodes_released) || 0;
+		return {
+			...release,
+			href: position > 0 ? `/player/${release.id}?ep=${position}` : `/release/${release.id}`,
+			badge: position > 0 ? (total ? `${position} серия из ${total}` : `${position} серия`) : null,
+			progress: position > 0 && total ? Math.min(100, (position / total) * 100) : 0
+		};
 	}
 
 	/** Полная первая страница оценок: в профиле их приходит всего несколько. */
@@ -389,15 +404,11 @@
 			{/if}
 
 			{#if !profile.is_stats_hidden && history.length}
-				<section>
-					<div class="card-head plain">
-						<h2>Недавно просмотренные</h2>
-						<a class="more" href={`/profile/${profileId}/history`}>Вся история <Icon name="chevronRight" size={16} /></a>
-					</div>
-					<div class="grid">
-						{#each history.slice(0, 18) as r (r.id)}<AnimeCard anime={r} type="grid" />{/each}
-					</div>
-				</section>
+				<ReleaseRow
+					title="Недавно просмотренные"
+					items={history}
+					href={`/profile/${profileId}/history`}
+				/>
 			{/if}
 		</div>
 	</div>
@@ -407,22 +418,39 @@
 
 <style>
 	.cover {
-		height: 240px;
+		height: 320px;
 		position: relative;
 		overflow: hidden;
 		background: var(--background-color);
 	}
 	/* Размытый аватар под шапкой: даёт профилю собственный цвет вместо
-	   ровной черноты. Если аватара нет, внизу остаётся фирменный градиент. */
+	   ровной черноты. Если аватара нет, остаётся фирменный градиент.
+	   Маска гасит саму картинку — так стык не читается даже вблизи. */
 	.cover-art {
 		position: absolute;
 		inset: 0;
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
-		transform: scale(1.4);
-		filter: blur(52px) saturate(150%);
-		opacity: 0.55;
+		transform: scale(1.45);
+		filter: blur(64px) saturate(150%);
+		opacity: 0.6;
+		-webkit-mask-image: linear-gradient(
+			to bottom,
+			#000 0%,
+			rgba(0, 0, 0, 0.92) 38%,
+			rgba(0, 0, 0, 0.6) 62%,
+			rgba(0, 0, 0, 0.22) 82%,
+			transparent 100%
+		);
+		mask-image: linear-gradient(
+			to bottom,
+			#000 0%,
+			rgba(0, 0, 0, 0.92) 38%,
+			rgba(0, 0, 0, 0.6) 62%,
+			rgba(0, 0, 0, 0.22) 82%,
+			transparent 100%
+		);
 	}
 	/* Фирменная подсветка поверх аватара — иначе он выглядит просто грязным пятном. */
 	.cover::before {
@@ -431,39 +459,48 @@
 		inset: 0;
 		background:
 			radial-gradient(
-				110% 140% at 12% -10%,
-				color-mix(in srgb, var(--primary-color) 55%, transparent),
-				transparent 60%
+				100% 120% at 12% -15%,
+				color-mix(in srgb, var(--primary-color) 50%, transparent),
+				transparent 62%
 			),
 			linear-gradient(
 				135deg,
-				color-mix(in srgb, var(--primary-color) 30%, transparent) 0%,
-				transparent 55%
+				color-mix(in srgb, var(--primary-color) 26%, transparent) 0%,
+				transparent 58%
 			);
+		-webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.5) 60%, transparent 100%);
+		mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.5) 60%, transparent 100%);
 	}
-	/* Обложка растворяется в фоне: без этого внизу оставалась резкая полоса. */
+	/* Плавный сход в фон страницы: одной линейной ступени было мало —
+	   переход читался полосой. Стопы подобраны под плавное затухание. */
 	.cover::after {
 		content: '';
 		position: absolute;
 		left: 0;
 		right: 0;
 		bottom: 0;
-		height: 110px;
-		background: linear-gradient(to top, var(--background-color), transparent);
+		height: 220px;
+		background: linear-gradient(
+			to top,
+			var(--background-color) 0%,
+			color-mix(in srgb, var(--background-color) 88%, transparent) 26%,
+			color-mix(in srgb, var(--background-color) 58%, transparent) 52%,
+			color-mix(in srgb, var(--background-color) 24%, transparent) 76%,
+			transparent 100%
+		);
 	}
 	/* Лёгкий отсвет ниже шапки — страница перестаёт быть плоско-чёрной. */
 	.profile {
-		background:
-			linear-gradient(
-				to bottom,
-				color-mix(in srgb, var(--primary-color) 7%, transparent) 0,
-				transparent 560px
-			);
+		background: linear-gradient(
+			to bottom,
+			color-mix(in srgb, var(--primary-color) 7%, transparent) 0,
+			transparent 620px
+		);
 	}
 	.container {
 		position: relative;
 		max-width: 1100px;
-		margin: -86px auto 0;
+		margin: -120px auto 0;
 		padding: 0 24px 60px;
 	}
 	.banner {
@@ -839,11 +876,6 @@
 	section {
 		margin-bottom: 30px;
 	}
-	.grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-		gap: 16px;
-	}
 	.err {
 		text-align: center;
 		padding: 80px;
@@ -851,7 +883,7 @@
 
 	@media (max-width: 768px) {
 		.container {
-			margin-top: -76px;
+			margin-top: -96px;
 			padding: 0 14px 40px;
 		}
 		.badges {
@@ -891,10 +923,6 @@
 		}
 		.card {
 			padding: 16px;
-		}
-		.grid {
-			grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
-			gap: 12px;
 		}
 	}
 </style>
