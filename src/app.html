@@ -20,8 +20,15 @@
 		<!-- Standalone-режим на iOS: без этих тегов «На экран «Домой»» открывается в Safari -->
 		<meta name="mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
-		<!-- black-translucent: контент уходит под статус-бар, отступ даёт вёрстка -->
-		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<!-- Именно black, а не black-translucent.
+		     С translucent iOS отдавала веб-вью высоту «экран минус статус-бар»
+		     (на 16 Pro это 874 - 62 = 812), но размещала его от самого верха —
+		     и снизу оставались те самые 62pt фона окна, до которых вёрстка не
+		     дотягивается в принципе. С black система сама сдвигает вью под
+		     статус-бар: высота та же, а нижний край совпадает с краем экрана.
+		     Побочно env(safe-area-inset-top) становится нулём, поэтому отступы
+		     под статус-бар в шапке и плеере схлопываются сами. -->
+		<meta name="apple-mobile-web-app-status-bar-style" content="black" />
 		<meta name="apple-mobile-web-app-title" content="AniShiki" />
 		<meta name="format-detection" content="telephone=no" />
 		<meta name="description" content="AniShiki — неофициальный веб-клиент Anixart" />
