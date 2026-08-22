@@ -38,6 +38,9 @@
 			/>
 		{/each}
 		<div class="grad"></div>
+		<!-- Настоящее размытие по периметру: слой ничего не рисует сам, он
+		     расфокусирует то, что под ним, и непрозрачен только у краёв. -->
+		<div class="edge-blur"></div>
 
 		<div class="content">
 			<span class="eyebrow">★ В центре внимания</span>
@@ -79,7 +82,9 @@
 		display: flex;
 		align-items: flex-end;
 		min-height: clamp(380px, 56vh, 560px);
-		border-radius: 24px;
+		/* Без скругления: края и углы растворяются маской и расфокусом,
+		   поэтому рамка блоку не нужна. overflow остаётся — им обрезается
+		   увеличенная картинка неактивного слайда. */
 		overflow: hidden;
 		margin-bottom: 34px;
 		isolation: isolate;
@@ -107,13 +112,29 @@
 		-webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 82%, transparent 100%);
 		mask-image: linear-gradient(to bottom, #000 0%, #000 82%, transparent 100%);
 	}
+	/* Затемнение под текст. Раньше горизонтальный градиент уходил в полностью
+	   непрозрачный фон, встречался с вертикальным, и на их стыке читалась
+	   кривая диагональная граница. Теперь горизонтальный до конца не
+	   доводится — плотность добирает только вертикальный, и граница внизу
+	   остаётся ровной по всей ширине. Цвета через фон темы, а не жёстко. */
 	.grad {
 		position: absolute;
 		inset: 0;
 		z-index: -1;
 		background:
-			linear-gradient(to right, var(--background-color) 0%, rgba(10, 10, 10, 0.5) 45%, transparent 75%),
-			linear-gradient(to top, var(--background-color) 2%, transparent 55%);
+			linear-gradient(
+				to top,
+				var(--background-color) 0%,
+				color-mix(in srgb, var(--background-color) 72%, transparent) 16%,
+				color-mix(in srgb, var(--background-color) 28%, transparent) 38%,
+				transparent 62%
+			),
+			linear-gradient(
+				to right,
+				color-mix(in srgb, var(--background-color) 86%, transparent) 0%,
+				color-mix(in srgb, var(--background-color) 44%, transparent) 44%,
+				transparent 74%
+			);
 	}
 	.content {
 		position: relative;
@@ -262,24 +283,35 @@
 	@media (min-width: 769px) {
 		.bg {
 			-webkit-mask-image: radial-gradient(
-				145% 165% at 58% 42%,
-				#000 66%,
-				rgba(0, 0, 0, 0.72) 86%,
+				118% 132% at 55% 45%,
+				#000 58%,
+				rgba(0, 0, 0, 0.6) 82%,
 				transparent 100%
 			);
 			mask-image: radial-gradient(
-				145% 165% at 58% 42%,
-				#000 66%,
-				rgba(0, 0, 0, 0.72) 86%,
+				118% 132% at 55% 45%,
+				#000 58%,
+				rgba(0, 0, 0, 0.6) 82%,
 				transparent 100%
 			);
+		}
+		.edge-blur {
+			position: absolute;
+			inset: 0;
+			z-index: -1;
+			pointer-events: none;
+			backdrop-filter: blur(16px);
+			-webkit-backdrop-filter: blur(16px);
+			/* Прозрачен в середине — там картинка остаётся чёткой — и набирает
+			   плотность к краям, где и происходит расфокус. */
+			-webkit-mask-image: radial-gradient(112% 126% at 55% 45%, transparent 38%, #000 92%);
+			mask-image: radial-gradient(112% 126% at 55% 45%, transparent 38%, #000 92%);
 		}
 	}
 
 	@media (max-width: 768px) {
 		.hero {
 			min-height: 440px;
-			border-radius: 0;
 			margin: 0 -12px 24px;
 		}
 		.content {
