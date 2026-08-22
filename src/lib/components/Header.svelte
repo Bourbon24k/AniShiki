@@ -51,8 +51,10 @@
 		display: none;
 		position: sticky;
 		top: 0;
-		height: calc(52px + var(--safe-top, 0px));
-		padding: var(--safe-top, 0px) 10px 0;
+		/* Плюс пара пикселей к зоне безопасности: вплотную под статус-баром
+		   шапка выглядела поджатой. */
+		height: calc(52px + var(--safe-top, 0px) + 4px);
+		padding: calc(var(--safe-top, 0px) + 4px) 10px 0;
 		align-items: center;
 		justify-content: space-between;
 		z-index: 50;
