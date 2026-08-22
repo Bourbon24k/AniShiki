@@ -179,7 +179,6 @@
 	}
 	.app.standalone {
 		height: 100vh;
-		height: -webkit-fill-available;
 	}
 	.app.mobile .viewport:not(.full) {
 		/* высота .mnav + зона безопасности, плюс небольшой зазор */

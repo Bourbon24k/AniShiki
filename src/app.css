@@ -111,9 +111,13 @@
 	box-sizing: border-box;
 }
 
+/* Именно 100vh, а не 100%. Процентная высота на корне и body отключает
+   viewport-fit=cover в standalone на iOS: вью перестаёт занимать весь экран
+   и получает высоту «экран минус статус-бар», оставаясь при этом прижатым
+   к верху — отсюда и полоса снизу ровно в высоту статус-бара. */
 html,
 body {
-	height: 100%;
+	height: 100vh;
 }
 
 /* Фон задаётся и на корне тоже. Обычно он наследуется от body, но body у нас
@@ -123,17 +127,6 @@ html {
 	background-color: var(--background-color);
 }
 
-/* Только для установленного приложения: у WebKit есть собственная единица
-   высоты окна, и она надёжнее vh — при расхождении вёрстка не дотягивалась
-   до нижнего края, и там оставалась полоса. В обычной вкладке не трогаем:
-   там расхождение как раз полезное, его закрывает панель браузера. */
-html.standalone {
-	height: -webkit-fill-available;
-}
-html.standalone body {
-	min-height: 100vh;
-	min-height: -webkit-fill-available;
-}
 
 body {
 	font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
