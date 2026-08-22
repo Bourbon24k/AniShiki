@@ -2,6 +2,7 @@ import { get } from 'svelte/store';
 import { supabase } from '$lib/supabase';
 import { siteSession } from '$lib/stores/auth';
 import { getApi } from '$lib/api';
+import { showLocalNotification } from '$lib/pwa';
 
 // Уведомления аккаунта сайта: заявки в друзья, комментарии и новые серии.
 //
@@ -12,7 +13,7 @@ import { getApi } from '$lib/api';
 
 const EPISODE_MARK_KEY = 'episode_marks';
 const EPISODE_SYNC_KEY = 'episode_sync_at';
-const SYNC_INTERVAL = 3 * 3600 * 1000; // не чаще раза в три часа
+const SYNC_INTERVAL = 30 * 60 * 1000; // не чаще раза в полчаса
 const SYNC_LIMIT = 12; // столько тайтлов проверяем за проход
 
 function uid() {
@@ -117,6 +118,25 @@ function writeMarks(marks) {
 	}
 }
 
+/** Сколько времени осталось до следующей допустимой проверки, мс. */
+export function nextSyncIn() {
+	try {
+		const last = Number(localStorage.getItem(EPISODE_SYNC_KEY) || 0);
+		return Math.max(0, SYNC_INTERVAL - (Date.now() - last));
+	} catch {
+		return 0;
+	}
+}
+
+/** Разрешить следующей проверке пройти прямо сейчас (кнопка «Обновить»). */
+export function forceNextSync() {
+	try {
+		localStorage.removeItem(EPISODE_SYNC_KEY);
+	} catch {
+		/* приватный режим */
+	}
+}
+
 /**
  * Проверить тайтлы из списка «Смотрю» на новые серии и завести уведомления.
  * Безопасно звать на каждый заход: сама себя троттлит.
@@ -167,16 +187,22 @@ export async function syncEpisodeNotifications() {
 		marks[key] = stamp;
 		// Первый проход только запоминает состояние — уведомлять не о чем.
 		if (firstRun || !known || stamp <= known) continue;
+		const title = release.title_ru || release.title || 'Новая серия';
+		const body = update.last_episode_update_name
+			? `Вышла ${update.last_episode_update_name}`
+			: 'Вышла новая серия';
+		const url = `/release/${release.id}`;
 		await notifySelf({
 			type: 'episode',
-			title: release.title_ru || release.title || 'Новая серия',
-			body: update.last_episode_update_name
-				? `Вышла ${update.last_episode_update_name}`
-				: 'Вышла новая серия',
+			title,
+			body,
 			releaseId: release.id,
 			image: release.image || release.poster || null,
-			url: `/release/${release.id}`
+			url
 		});
+		// Плюс системное уведомление — чтобы узнать о серии, не открывая приложение.
+		// Если разрешения нет, вызов молча вернёт false.
+		showLocalNotification({ title, body, url, tag: `episode-${release.id}` }).catch(() => {});
 		created += 1;
 	}
 

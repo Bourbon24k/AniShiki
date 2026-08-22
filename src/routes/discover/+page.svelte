@@ -1,68 +1,87 @@
 <script>
+	/**
+	 * Обзор: витрина подборок.
+	 *
+	 * Раньше это был просто набор рядов из /discover. Теперь сверху идут
+	 * собранные под человека подборки (см. $lib/picks), затем коллекции
+	 * Anixart, а глобальные ряды грузятся по мере прокрутки.
+	 */
 	import { onMount } from 'svelte';
 	import { getApi } from '$lib/api';
 	import { userToken } from '$lib/stores';
 	import { authReady, siteSession } from '$lib/stores/auth';
-	import { getContinueWatching, getRecommendations } from '$lib/personal';
+	import { getContinueWatching } from '$lib/personal';
+	import { buildPicks, popularCollections } from '$lib/picks';
+	import { catalogPageLive } from '$lib/catalog';
+	import { FEATURED_GENRES } from '$lib/genres';
 	import ReleaseRow from '$lib/components/ReleaseRow.svelte';
+	import LazyRow from '$lib/components/LazyRow.svelte';
+	import CollectionCard from '$lib/components/CollectionCard.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 
-	let interesting = [];
-	let discussing = [];
-	let recommendations = [];
+	let picks = [];
+	let picksLoading = true;
 	let watching = [];
-	let topRated = [];
-	let films = [];
-	let randomList = [];
-	let watchingNow = [];
-	let loading = true;
-	let randomLoading = false;
-	let personalLoading = true;
-	let recommendationsPersonal = false;
+	let watchingLoading = false;
 
-	// Персональные блоки: у Anixart — своя выдача, у аккаунта сайта — Supabase.
-	// Сессия резолвится асинхронно, поэтому ждём authReady и следим за сменой юзера.
+	let collections = [];
+	let collectionsLoading = true;
+
+	let randomList = [];
+	let randomLoading = false;
+
 	let personalFor = undefined;
 	$: if ($authReady) syncPersonal(($userToken && 'anixart') || $siteSession?.user?.id || null);
 
 	async function syncPersonal(key) {
 		if (key === personalFor) return;
 		personalFor = key;
-		personalLoading = true;
-		const [recs, cont] = await Promise.all([
-			getRecommendations().catch((e) => {
-				console.error('recommendations', e);
-				return { items: [], personal: false };
+		picksLoading = true;
+		watchingLoading = !!key;
+		const [rows, cont] = await Promise.all([
+			buildPicks({ max: 6 }).catch((e) => {
+				console.error('picks', e);
+				return [];
 			}),
 			key
 				? getContinueWatching().catch((e) => {
 						console.error('continue watching', e);
 						return [];
-				  })
+					})
 				: Promise.resolve([])
 		]);
-		recommendations = recs.items;
-		recommendationsPersonal = recs.personal;
+		picks = rows;
 		watching = cont;
-		personalLoading = false;
+		picksLoading = false;
+		watchingLoading = false;
 	}
 
-	async function safe(p) {
+	async function loadRandom() {
+		randomLoading = true;
 		try {
-			const r = await p;
-			return (r?.content || []).map((x) => x.release || x);
+			const api = getApi();
+			const results = await Promise.all(
+				Array.from({ length: 12 }, () =>
+					api.release
+						.getRandomRelease(true)
+						.then((d) => d?.release)
+						.catch(() => null)
+				)
+			);
+			const seen = new Set();
+			randomList = results.filter((r) => r && r.id && !seen.has(r.id) && seen.add(r.id));
 		} catch (e) {
-			console.error('discover', e);
-			return [];
+			console.error('random', e);
 		}
+		randomLoading = false;
 	}
 
-	// «Интересное» — промо-баннеры (title/image/action), не релизы.
-	// action — id релиза для перехода; приводим к форме, понятной AnimeCard.
-	async function safeInteresting(p) {
+	/** «Интересное» — промо-баннеры (title/image/action), не релизы. */
+	async function loadInteresting() {
 		try {
-			const r = await p;
-			return (r?.content || [])
+			const data = await getApi()?.discover.getInteresting(0);
+			return (data?.content || [])
 				.map((x) => ({
 					id: Number(x.action) || x.id,
 					title_ru: x.title,
@@ -76,35 +95,24 @@
 		}
 	}
 
-	async function loadRandom() {
-		randomLoading = true;
+	async function loadFrom(promise) {
 		try {
-			const api = getApi();
-			const results = await Promise.all(
-				Array.from({ length: 12 }, () => api.release.getRandomRelease(true).then((d) => d?.release).catch(() => null))
-			);
-			const seen = new Set();
-			randomList = results.filter((r) => r && r.id && !seen.has(r.id) && seen.add(r.id));
+			const data = await promise;
+			return (data?.content || []).map((x) => x.release || x);
 		} catch (e) {
-			console.error('random', e);
+			console.error('discover', e);
+			return [];
 		}
-		randomLoading = false;
 	}
 
 	onMount(async () => {
-		const api = getApi();
-		if (!api) return;
 		loadRandom();
-		[interesting, discussing, watchingNow, topRated, films] = await Promise.all([
-			safeInteresting(api.discover.getInteresting(0)),
-			safe(api.discover.getDiscussing()),
-			// /discover/watching — глобальный блок «сейчас смотрят», не личный список
-			safe(api.discover.getWatching(0)),
-			safe(api.release.filter(0, { sort: 1 }, true)),
-			// «Популярные фильмы» — по популярности, а не по оценке
-			safe(api.release.filter(0, { sort: 3, category_id: 2 }, true))
-		]);
-		loading = false;
+		try {
+			collections = await popularCollections(12);
+		} catch (e) {
+			console.error('collections', e);
+		}
+		collectionsLoading = false;
 	});
 </script>
 
@@ -112,6 +120,47 @@
 
 <div class="page">
 	<h1>Обзор</h1>
+
+	<div class="genre-strip no-scrollbar">
+		{#each FEATURED_GENRES as g}
+			<a class="gchip" href={`/search?genre=${encodeURIComponent(g)}`}>{g}</a>
+		{/each}
+	</div>
+
+	{#if ($userToken || $siteSession) && (watchingLoading || watching.length)}
+		<ReleaseRow
+			title="Продолжить просмотр"
+			items={watching}
+			loading={watchingLoading && !watching.length}
+			href="/history"
+		/>
+	{/if}
+
+	{#if picksLoading}
+		{#each Array(2) as _}
+			<div class="row-sk">
+				<Skeleton h="24px" w="200px" radius="8px" />
+			</div>
+		{/each}
+	{:else}
+		{#each picks as row (row.id)}
+			<ReleaseRow title={row.title} subtitle={row.subtitle} items={row.items} href={row.href} />
+		{/each}
+	{/if}
+
+	<section class="collections">
+		<div class="row-head">
+			<h2 class="row-title">Коллекции</h2>
+			<a class="all" href="/collections">Все <Icon name="chevronRight" size={16} /></a>
+		</div>
+		<div class="crow no-scrollbar">
+			{#if collectionsLoading}
+				{#each Array(6) as _}<div class="ccell"><Skeleton aspect="16/9" radius="16px" /></div>{/each}
+			{:else}
+				{#each collections as c (c.id)}<div class="ccell"><CollectionCard collection={c} /></div>{/each}
+			{/if}
+		</div>
+	</section>
 
 	<div class="row-head">
 		<h2 class="row-title">Случайная подборка</h2>
@@ -121,27 +170,19 @@
 	</div>
 	<ReleaseRow title="" items={randomList} loading={randomLoading} />
 
-	{#if ($userToken || $siteSession) && (personalLoading || watching.length)}
-		<ReleaseRow
-			title="Продолжить просмотр"
-			items={watching}
-			loading={personalLoading && !watching.length}
-			href="/history"
-		/>
-	{/if}
-	{#if personalLoading || recommendations.length}
-		<ReleaseRow
-			title={recommendationsPersonal ? 'Рекомендации для вас' : 'Может понравиться'}
-			items={recommendations}
-			loading={personalLoading && !recommendations.length}
-		/>
-	{/if}
-
-	<ReleaseRow title="Интересное" items={interesting} {loading} numbered />
-	<ReleaseRow title="Сейчас смотрят" items={watchingNow} {loading} />
-	<ReleaseRow title="Высокий рейтинг" items={topRated} {loading} href="/search?type=5" />
-	<ReleaseRow title="Сейчас обсуждают" items={discussing} {loading} />
-	<ReleaseRow title="Популярные фильмы" items={films} {loading} href="/search?type=4" />
+	<LazyRow title="Интересное" numbered load={loadInteresting} />
+	<LazyRow title="Сейчас смотрят" load={() => loadFrom(getApi()?.discover.getWatching(0))} />
+	<LazyRow title="Сейчас обсуждают" load={() => loadFrom(getApi()?.discover.getDiscussing())} />
+	<LazyRow
+		title="Высокий рейтинг"
+		href="/search?type=5"
+		load={() => catalogPageLive({ sort: 1 }, 0)}
+	/>
+	<LazyRow
+		title="Популярные фильмы"
+		href="/search?type=4"
+		load={() => catalogPageLive({ sort: 3, category_id: 2 }, 0)}
+	/>
 </div>
 
 <style>
@@ -153,7 +194,30 @@
 	h1 {
 		font-size: 30px;
 		font-weight: 800;
-		margin-bottom: 24px;
+		margin-bottom: 18px;
+	}
+	.genre-strip {
+		display: flex;
+		gap: 8px;
+		overflow-x: auto;
+		padding-bottom: 22px;
+	}
+	.gchip {
+		white-space: nowrap;
+		padding: 8px 15px;
+		border-radius: 999px;
+		border: 1px solid var(--glass-border);
+		background: var(--alt-background-color);
+		color: var(--secondary-text-color);
+		font-size: 13.5px;
+		font-weight: 600;
+	}
+	.gchip:hover {
+		border-color: var(--primary-color);
+		color: var(--primary-color);
+	}
+	.row-sk {
+		margin-bottom: 34px;
 	}
 	.row-head {
 		display: flex;
@@ -165,6 +229,25 @@
 	.row-title {
 		font-size: 20px;
 		font-weight: 700;
+	}
+	.all {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--secondary-text-color);
+	}
+	.collections {
+		margin-bottom: 34px;
+	}
+	.crow {
+		display: grid;
+		grid-auto-flow: column;
+		grid-auto-columns: 260px;
+		gap: 14px;
+		overflow-x: auto;
+		padding: 4px;
 	}
 	.reroll {
 		display: inline-flex;
@@ -191,6 +274,9 @@
 		}
 		h1 {
 			font-size: 24px;
+		}
+		.crow {
+			grid-auto-columns: 210px;
 		}
 	}
 </style>

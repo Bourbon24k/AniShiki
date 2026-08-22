@@ -74,7 +74,11 @@
 <style>
 	.hero {
 		position: relative;
-		height: clamp(380px, 56vh, 560px);
+		/* Контент кладём в поток и прижимаем вниз: при абсолютном
+		   позиционировании длинный заголовок вылезал за верх и обрезался. */
+		display: flex;
+		align-items: flex-end;
+		min-height: clamp(380px, 56vh, 560px);
 		border-radius: 24px;
 		overflow: hidden;
 		margin-bottom: 34px;
@@ -105,10 +109,9 @@
 			linear-gradient(to top, var(--background-color) 2%, transparent 55%);
 	}
 	.content {
-		position: absolute;
-		left: 0;
-		bottom: 0;
-		max-width: 640px;
+		position: relative;
+		width: 100%;
+		max-width: 660px;
 		padding: 40px;
 		animation: fadeInUp 0.6s ease both;
 	}
@@ -121,16 +124,25 @@
 		margin-bottom: 12px;
 	}
 	h1 {
-		font-size: clamp(30px, 4vw, 52px);
+		font-size: clamp(26px, 3.4vw, 46px);
 		font-weight: 800;
-		line-height: 1.05;
+		line-height: 1.08;
 		letter-spacing: -1px;
 		text-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+		/* Три строки — предел: дальше заголовок съедает весь блок. */
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
 	}
 	.orig {
 		font-size: 15px;
 		color: var(--secondary-text-color);
 		margin-top: 8px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.meta {
 		display: flex;
@@ -228,17 +240,35 @@
 		width: 40px;
 		background: var(--primary-color);
 	}
+	/* Невысокие окна: описание уходит первым — кнопки важнее. */
+	@media (max-height: 720px) and (min-width: 769px) {
+		.desc {
+			-webkit-line-clamp: 2;
+			line-clamp: 2;
+		}
+		.content {
+			padding: 32px;
+		}
+	}
 	@media (max-width: 768px) {
 		.hero {
-			height: 460px;
+			min-height: 440px;
 			border-radius: 0;
 			margin: 0 -12px 24px;
 		}
 		.content {
 			padding: 24px 18px 28px;
 		}
+		h1 {
+			-webkit-line-clamp: 2;
+			line-clamp: 2;
+		}
 		.desc {
 			-webkit-line-clamp: 2;
+			line-clamp: 2;
+		}
+		.genres {
+			margin: 12px 0 16px;
 		}
 		.dots {
 			right: 18px;

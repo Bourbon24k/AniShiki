@@ -1,4 +1,13 @@
 <script>
+	/**
+	 * Сетка карточек с догрузкой.
+	 *
+	 * Догрузка висит на маячке в конце списка, а не на обработчике прокрутки:
+	 * так она работает независимо от того, какой контейнер на странице
+	 * прокручивается, и не дёргает обработчик на каждый пиксель.
+	 */
+	import { onDestroy } from 'svelte';
+	import { whenNear } from '$lib/lazyload';
 	import AnimeCard from './AnimeCard.svelte';
 	import Skeleton from './Skeleton.svelte';
 
@@ -8,14 +17,24 @@
 	export let empty = 'Ничего не найдено';
 	export let onMore = null;
 
-	function onScroll(e) {
-		if (!onMore || loadingMore) return;
-		const el = e.target;
-		if (el.scrollHeight - el.scrollTop - el.clientHeight < 600) onMore();
+	let sentinel;
+	let stop;
+
+	$: attach(sentinel);
+
+	function attach(node) {
+		stop?.();
+		stop = null;
+		if (!node) return;
+		stop = whenNear(node, () => {
+			if (onMore && !loadingMore && !loading) onMore();
+		});
 	}
+
+	onDestroy(() => stop?.());
 </script>
 
-<div class="grid-wrap" on:scroll={onScroll}>
+<div class="grid-wrap">
 	{#if loading}
 		<div class="grid">
 			{#each Array(18) as _}
@@ -31,32 +50,33 @@
 			{/each}
 		</div>
 		{#if loadingMore}
-			<div class="more-sk">
-				<div class="grid">
-					{#each Array(6) as _}<Skeleton aspect="2/3" radius="16px" />{/each}
-				</div>
+			<div class="grid more-sk">
+				{#each Array(6) as _}<Skeleton aspect="2/3" radius="16px" />{/each}
 			</div>
 		{/if}
+		{#if onMore}<div class="sentinel" bind:this={sentinel}></div>{/if}
 	{/if}
 </div>
 
 <style>
 	.grid-wrap {
-		height: 100%;
-		overflow-y: auto;
+		padding-bottom: 8px;
 	}
 	.grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
 		gap: 18px;
 	}
+	.more-sk {
+		margin-top: 18px;
+	}
 	.empty {
 		text-align: center;
 		padding: 80px 20px;
 		color: var(--secondary-text-color);
 	}
-	.more-sk {
-		margin-top: 18px;
+	.sentinel {
+		height: 1px;
 	}
 	@media (max-width: 768px) {
 		.grid {

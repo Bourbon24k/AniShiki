@@ -1,4 +1,12 @@
 <script>
+	/**
+	 * Боковая панель на десктопе.
+	 *
+	 * В покое это узкая полоса из одних иконок, при наведении она разворачивается
+	 * и показывает подписи. Разворот происходит поверх страницы: место в раскладке
+	 * панель занимает всегда одно и то же, поэтому контент не дёргается.
+	 * Прежние всплывающие подсказки не нужны — подпись теперь и есть подсказка.
+	 */
 	import { page } from '$app/stores';
 	import { userToken, notificationCount } from '$lib/stores';
 	import { siteSession, siteProfile } from '$lib/stores/auth';
@@ -10,6 +18,10 @@
 	$: site = $siteSession;
 	// доступ к закладкам/истории: аккаунт Anixart ИЛИ аккаунт сайта
 	$: ok = (item) => !item.auth || utoken || (item.site && site);
+
+	$: accountHref = utoken ? `/profile/${utoken.id}` : site ? '/me' : '/login';
+	$: accountName = utoken?.login || $siteProfile?.username || 'Войти';
+	$: accountAvatar = utoken?.avatar || $siteProfile?.avatar_url || null;
 
 	const topItems = [
 		{ path: '/', icon: 'home', label: 'Главная' },
@@ -31,105 +43,175 @@
 	}
 </script>
 
-<aside class="rail unselectable">
-	<a href="/" class="logo" aria-label="AniShiki">
-		<img src="/favicon.svg" alt="AniShiki" />
-	</a>
+<aside class="slot unselectable">
+	<div class="rail">
+		<a href="/" class="row logo" title="AniShiki">
+			<span class="ico"><img src="/favicon.svg" alt="" /></span>
+			<span class="label brand">AniShiki</span>
+		</a>
 
-	<a
-		href={utoken ? `/profile/${utoken.id}` : site ? '/me' : '/login'}
-		class="avatar"
-		title={utoken?.login || $siteProfile?.username || 'Войти'}
-	>
-		{#if utoken?.avatar}
-			<img src={utoken.avatar} alt="" referrerpolicy="no-referrer" />
-		{:else if $siteProfile?.avatar_url}
-			<img src={$siteProfile.avatar_url} alt="" referrerpolicy="no-referrer" />
-		{:else}
-			<Icon name="user" size={22} />
-		{/if}
-	</a>
+		<div class="divider"></div>
 
-	<div class="divider"></div>
+		<nav class="group">
+			{#each topItems as item}
+				{#if ok(item)}
+					<a href={item.path} class="row item" class:active={isActive(item.path)} title={item.label}>
+						<span class="ico"><Icon name={item.icon} size={22} /></span>
+						<span class="label">{item.label}</span>
+					</a>
+				{/if}
+			{/each}
+		</nav>
 
-	<nav class="group">
-		{#each topItems as item}
-			{#if ok(item)}
-				<a href={item.path} class="item" class:active={isActive(item.path)} title={item.label}>
-					<Icon name={item.icon} size={22} />
-					<span class="tip">{item.label}</span>
-				</a>
-			{/if}
-		{/each}
-	</nav>
-
-	<nav class="group bottom">
-		{#each bottomItems as item}
-			{#if !item.auth || utoken}
-				<a href={item.path} class="item" class:active={isActive(item.path)} title={item.label}>
-					<span class="ico-wrap">
-						<Icon name={item.icon} size={22} />
-						{#if item.badge && nCount > 0}
-							<span class="badge">{nCount > 99 ? '99+' : nCount}</span>
-						{/if}
-					</span>
-					<span class="tip">{item.label}</span>
-				</a>
-			{/if}
-		{/each}
-	</nav>
+		<nav class="group bottom">
+			{#each bottomItems as item}
+				<!-- Профиль всегда стоит непосредственно перед настройками. -->
+				{#if item.path === '/settings'}
+					<a href={accountHref} class="row item account" title={accountName}>
+						<span class="ico">
+							<span class="avatar">
+								{#if accountAvatar}
+									<img src={accountAvatar} alt="" referrerpolicy="no-referrer" />
+								{:else}
+									<Icon name="user" size={20} />
+								{/if}
+							</span>
+						</span>
+						<span class="label">{accountName}</span>
+					</a>
+				{/if}
+				{#if !item.auth || utoken}
+					<a href={item.path} class="row item" class:active={isActive(item.path)} title={item.label}>
+						<span class="ico">
+							<Icon name={item.icon} size={22} />
+							{#if item.badge && nCount > 0}
+								<span class="badge">{nCount > 99 ? '99+' : nCount}</span>
+							{/if}
+						</span>
+						<span class="label">{item.label}</span>
+					</a>
+				{/if}
+			{/each}
+		</nav>
+	</div>
 </aside>
 
 <style>
-	.rail {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		height: 100%;
+	/* Место в раскладке: всегда узкое, чтобы разворот не двигал контент. */
+	.slot {
+		position: relative;
 		width: 76px;
 		min-width: 76px;
-		padding: 16px 0 18px;
-		gap: 8px;
+		height: 100%;
+		z-index: 100;
+	}
+
+	.rail {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: 0;
+		width: 76px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 16px 14px 18px;
 		background: var(--alt-background-color);
 		border-right: 1px solid var(--glass-border);
-		z-index: 100;
+		overflow-x: hidden;
 		overflow-y: auto;
+		scrollbar-width: none;
+		transition: width 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.22s ease;
 	}
 	.rail::-webkit-scrollbar {
 		display: none;
 	}
+	.rail:hover,
+	.rail:focus-within {
+		width: 232px;
+		box-shadow: 18px 0 44px rgba(0, 0, 0, 0.45);
+	}
 
-	.logo {
-		width: 46px;
-		height: 46px;
+	.group {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.bottom {
+		margin-top: auto;
+	}
+
+	/* Строка: иконка на своём месте, подпись выезжает справа. */
+	.row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		height: 48px;
 		border-radius: 14px;
-		overflow: hidden;
+		color: var(--secondary-text-color);
+		transition: background 0.2s ease, color 0.2s ease;
+	}
+	.ico {
+		position: relative;
+		width: 48px;
+		min-width: 48px;
+		height: 48px;
 		display: grid;
 		place-items: center;
+	}
+	.label {
+		white-space: nowrap;
+		font-size: 14.5px;
+		font-weight: 600;
+		opacity: 0;
+		transform: translateX(-6px);
+		transition: opacity 0.18s ease, transform 0.22s ease;
+	}
+	.rail:hover .label,
+	.rail:focus-within .label {
+		opacity: 1;
+		transform: none;
+	}
+
+	.item:hover {
+		background: var(--background-color);
+		color: var(--text-color);
+	}
+	.item.active {
+		color: #fff;
+		background: var(--primary-color);
+	}
+
+	.logo {
+		color: var(--text-color);
+		margin-bottom: 2px;
+	}
+	.logo .ico img {
+		width: 44px;
+		height: 44px;
 		transition: transform 0.2s ease;
 	}
-	.logo img {
-		width: 100%;
-		height: 100%;
+	.logo:hover .ico img {
+		transform: scale(1.06);
 	}
-	.logo:hover {
-		transform: translateY(-2px) scale(1.04);
+	.brand {
+		font-size: 19px;
+		font-weight: 800;
+		letter-spacing: -0.3px;
 	}
 
 	.avatar {
-		width: 44px;
-		height: 44px;
+		width: 38px;
+		height: 38px;
 		border-radius: 50%;
 		overflow: hidden;
 		display: grid;
 		place-items: center;
 		background: var(--background-color);
-		color: var(--secondary-text-color);
 		border: 1px solid var(--glass-border);
-		transition: transform 0.2s ease, box-shadow 0.2s ease;
+		transition: box-shadow 0.2s ease;
 	}
-	.avatar:hover {
-		transform: scale(1.06);
+	.account:hover .avatar {
 		box-shadow: 0 0 0 2px var(--primary-color);
 	}
 	.avatar img {
@@ -139,52 +221,15 @@
 	}
 
 	.divider {
-		width: 28px;
 		height: 1px;
+		margin: 4px 10px 6px;
 		background: var(--glass-border);
-		margin: 2px 0;
 	}
 
-	.group {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 6px;
-		width: 100%;
-	}
-	.bottom {
-		margin-top: auto;
-	}
-
-	.item {
-		position: relative;
-		width: 48px;
-		height: 48px;
-		display: grid;
-		place-items: center;
-		border-radius: 14px;
-		color: var(--secondary-text-color);
-		transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease;
-	}
-	.item:hover {
-		background: var(--background-color);
-		color: var(--text-color);
-		transform: translateY(-1px);
-	}
-	.item.active {
-		color: #fff;
-		background: var(--primary-color);
-	}
-
-	.ico-wrap {
-		position: relative;
-		display: grid;
-		place-items: center;
-	}
 	.badge {
 		position: absolute;
-		top: -8px;
-		right: -10px;
+		top: 6px;
+		right: 4px;
 		min-width: 16px;
 		height: 16px;
 		padding: 0 4px;
@@ -196,28 +241,5 @@
 		background: var(--primary-color);
 		border-radius: 9px;
 		border: 2px solid var(--alt-background-color);
-	}
-
-	.tip {
-		position: absolute;
-		left: calc(100% + 10px);
-		top: 50%;
-		transform: translateY(-50%) translateX(-4px);
-		white-space: nowrap;
-		padding: 6px 10px;
-		font-size: 12px;
-		font-weight: 500;
-		color: var(--text-color);
-		background: var(--elevated-color);
-		border: 1px solid var(--glass-border);
-		border-radius: 8px;
-		opacity: 0;
-		pointer-events: none;
-		transition: opacity 0.18s ease, transform 0.18s ease;
-		z-index: 200;
-	}
-	.item:hover .tip {
-		opacity: 1;
-		transform: translateY(-50%) translateX(0);
 	}
 </style>

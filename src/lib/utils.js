@@ -183,12 +183,16 @@ export function formatWatchTime(totalMinutes) {
 		value = minutes;
 		unit = getNumericWord(minutes, ['минута', 'минуты', 'минут']);
 	}
+	// Часами удобнее сравнивать: «47 дней» звучит абстрактно, «1143 часа» — нет.
+	const totalHours = Math.floor(m / 60);
 	return {
 		days,
 		hours,
 		minutes,
 		value,
 		unit,
+		totalHours,
+		hoursLong: `${fmtNum(totalHours)} ${getNumericWord(totalHours, ['час', 'часа', 'часов'])}`,
 		long: parts.length ? parts.join(' ') : '0 минут'
 	};
 }
@@ -237,4 +241,26 @@ export function parseGenres(genres, limit = 6) {
 		.map((g) => g.trim())
 		.filter(Boolean)
 		.slice(0, limit);
+}
+
+/** «5 минут назад» / «3 дня назад» / дата — как в клиенте Anixart. */
+export function timeAgo(timestampSeconds) {
+	const ms = Number(timestampSeconds) * 1000;
+	if (!Number.isFinite(ms) || ms <= 0) return '';
+	const diff = Math.max(0, (Date.now() - ms) / 1000);
+	if (diff < 60) return 'только что';
+	if (diff < 3600) {
+		const m = Math.floor(diff / 60);
+		return `${m} ${getNumericWord(m, ['минуту', 'минуты', 'минут'])} назад`;
+	}
+	if (diff < 86400) {
+		const h = Math.floor(diff / 3600);
+		return `${h} ${getNumericWord(h, ['час', 'часа', 'часов'])} назад`;
+	}
+	if (diff < 2592000) {
+		const d = Math.floor(diff / 86400);
+		return `${d} ${getNumericWord(d, ['день', 'дня', 'дней'])} назад`;
+	}
+	const date = new Date(ms);
+	return `${date.getDate()} ${date.toLocaleDateString('ru-RU', { month: 'short' })} ${date.getFullYear()}`;
 }

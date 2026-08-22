@@ -1,13 +1,29 @@
 <script>
-	import { mobileMenuOpen } from '$lib/stores';
+	/**
+	 * Шапка на телефоне. В standalone под ней проходит статус-бар (мы просили
+	 * black-translucent), поэтому высота считается вместе с верхней зоной
+	 * безопасности — иначе часы наезжают на заголовок.
+	 */
+	import { mobileMenuOpen, userToken } from '$lib/stores';
+	import { siteSession, siteProfile } from '$lib/stores/auth';
+	import { haptic } from '$lib/ios';
 	import Icon from './Icon.svelte';
+
 	export let showBack = false;
+
+	$: avatar = $userToken?.avatar || $siteProfile?.avatar_url || null;
+	$: profileHref = $userToken ? `/profile/${$userToken.id}` : $siteSession ? '/me' : '/login';
+
+	function back() {
+		haptic('light');
+		history.back();
+	}
 </script>
 
 <header class="header glass">
 	<div class="side">
 		{#if showBack}
-			<button class="ico-btn" on:click={() => history.back()} aria-label="Назад">
+			<button class="ico-btn" on:click={back} aria-label="Назад">
 				<Icon name="back" />
 			</button>
 		{:else}
@@ -17,10 +33,16 @@
 		{/if}
 	</div>
 	<a href="/" class="logo">
-		AniShiki<sup>β</sup>
+		AniShiki<img class="mark" src="/favicon.svg" alt="" width="28" height="28" />
 	</a>
 	<div class="side right">
-		<a href="/search" class="ico-btn" aria-label="Поиск"><Icon name="search" /></a>
+		<a href={profileHref} class="ico-btn ava" aria-label="Профиль">
+			{#if avatar}
+				<img src={avatar} alt="" referrerpolicy="no-referrer" />
+			{:else}
+				<Icon name="user" size={22} />
+			{/if}
+		</a>
 	</div>
 </header>
 
@@ -29,8 +51,8 @@
 		display: none;
 		position: sticky;
 		top: 0;
-		height: calc(56px + env(safe-area-inset-top, 0));
-		padding: env(safe-area-inset-top, 0) 12px 0;
+		height: calc(52px + var(--safe-top, 0px));
+		padding: var(--safe-top, 0px) 10px 0;
 		align-items: center;
 		justify-content: space-between;
 		z-index: 50;
@@ -44,8 +66,8 @@
 		justify-content: flex-end;
 	}
 	.ico-btn {
-		width: 40px;
-		height: 40px;
+		width: 38px;
+		height: 38px;
 		display: grid;
 		place-items: center;
 		border: none;
@@ -53,18 +75,34 @@
 		color: var(--text-color);
 		border-radius: 50%;
 		cursor: pointer;
+		transition: transform 0.12s ease;
 	}
 	.ico-btn:active {
-		background: var(--background-color);
+		transform: scale(0.9);
+	}
+	.ava {
+		overflow: hidden;
+		background: var(--alt-background-color);
+		color: var(--secondary-text-color);
+	}
+	.ava img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
 	}
 	.logo {
-		font-size: 20px;
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		font-size: 19px;
 		font-weight: 800;
 		letter-spacing: -0.3px;
 	}
-	.logo sup {
-		font-size: 10px;
-		color: var(--primary-color);
+	/* Значок вместо «β» — в полную высоту строки, а не приписка сверху. */
+	.logo .mark {
+		width: 1.5em;
+		height: 1.5em;
+		flex-shrink: 0;
 	}
 	@media (max-width: 768px) {
 		.header {

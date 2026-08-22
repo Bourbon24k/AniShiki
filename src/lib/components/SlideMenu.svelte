@@ -30,7 +30,9 @@
 	<div class="backdrop" on:click={close} transition:fade={{ duration: 180 }}></div>
 	<nav class="drawer" transition:slide={{ axis: 'x', duration: 240 }}>
 		<div class="head">
-			<span class="logo">AniShiki<sup>β</sup></span>
+			<span class="logo">
+				AniShiki<img class="mark" src="/favicon.svg" alt="" width="32" height="32" />
+			</span>
 			<button class="close" on:click={close} aria-label="Закрыть"><Icon name="close" /></button>
 		</div>
 
@@ -96,12 +98,17 @@
 		padding: 18px 16px;
 	}
 	.logo {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
 		font-size: 22px;
 		font-weight: 800;
 	}
-	.logo sup {
-		font-size: 11px;
-		color: var(--primary-color);
+	/* Значок вместо «β» — в полную высоту строки, а не приписка сверху. */
+	.logo .mark {
+		width: 1.5em;
+		height: 1.5em;
+		flex-shrink: 0;
 	}
 	.close {
 		width: 38px;

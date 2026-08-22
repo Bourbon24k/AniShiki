@@ -1,35 +1,23 @@
+/**
+ * Установка приложения, обновления service worker и системные уведомления.
+ * Всё, что касается поведения оболочки на iOS, живёт в $lib/ios.
+ */
 import { browser } from '$app/environment';
 import { writable } from 'svelte/store';
+import { standalone, detectStandalone, isIosSafari } from './ios';
 
-// Установка приложения и обновления service worker.
+export { standalone, isIosSafari };
 
 /** Отложенное событие beforeinstallprompt (Android/desktop Chrome) или null. */
 export const installPrompt = writable(null);
-/** Приложение уже открыто как установленное. */
-export const standalone = writable(false);
 /** Скачано обновление и ждёт применения. */
 export const updateReady = writable(false);
+/** Разрешение на системные уведомления: 'default' | 'granted' | 'denied' | 'unsupported' */
+export const notificationPermission = writable('unsupported');
 
 let waitingWorker = null;
-
-/** Открыто ли из иконки на домашнем экране. */
-function isStandalone() {
-	if (!browser) return false;
-	return (
-		window.matchMedia?.('(display-mode: standalone)').matches ||
-		window.matchMedia?.('(display-mode: minimal-ui)').matches ||
-		// iOS Safari не поддерживает display-mode до 16.4
-		window.navigator.standalone === true
-	);
-}
-
-/** Safari на iPhone/iPad: там нет beforeinstallprompt, нужна инструкция руками. */
-export function isIosSafari() {
-	if (!browser) return false;
-	const ua = navigator.userAgent;
-	const iOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-	return iOS && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
-}
+/** Пользователь нажал «Обновить» — значит перезагрузка ожидаема. */
+let updateRequested = false;
 
 /** Показать системный диалог установки. Возвращает true, если приняли. */
 export async function promptInstall(event) {
@@ -47,6 +35,7 @@ export async function promptInstall(event) {
 
 /** Применить скачанное обновление и перезагрузить страницу. */
 export function applyUpdate() {
+	updateRequested = true;
 	if (!waitingWorker) {
 		location.reload();
 		return;
@@ -56,11 +45,73 @@ export function applyUpdate() {
 	updateReady.set(false);
 }
 
+/* ─────────────────────── системные уведомления ─────────────────────── */
+
+/**
+ * Спросить разрешение на уведомления.
+ *
+ * На iOS оно доступно только в установленном приложении (iOS 16.4+): в Safari
+ * запрос молча провалится, поэтому там сначала просим установить.
+ */
+export async function requestNotifications() {
+	if (!browser || typeof Notification === 'undefined') return 'unsupported';
+	try {
+		const result = await Notification.requestPermission();
+		notificationPermission.set(result);
+		return result;
+	} catch (e) {
+		console.error('notification permission', e);
+		return 'denied';
+	}
+}
+
+/**
+ * Показать локальное уведомление (без сервера пушей): используется, когда
+ * приложение само нашло новую серию у тайтла из списка «Смотрю».
+ *
+ * @param {{ title: string, body?: string, url?: string, tag?: string, image?: string }} data
+ */
+export async function showLocalNotification({ title, body, url, tag, image }) {
+	if (!browser || typeof Notification === 'undefined') return false;
+	if (Notification.permission !== 'granted') return false;
+	try {
+		const registration = await navigator.serviceWorker?.ready;
+		const options = {
+			body,
+			tag: tag || title,
+			icon: '/icon-192.png',
+			badge: '/icon-192.png',
+			image,
+			data: { url: url || '/notifications' }
+		};
+		if (registration) await registration.showNotification(title, options);
+		else new Notification(title, options);
+		return true;
+	} catch (e) {
+		console.error('local notification', e);
+		return false;
+	}
+}
+
+/** Значок с числом на иконке приложения (iOS 16.4+ в standalone, Chrome). */
+export function setAppBadge(count) {
+	if (!browser) return;
+	try {
+		if (count > 0) navigator.setAppBadge?.(count);
+		else navigator.clearAppBadge?.();
+	} catch {
+		/* не поддерживается — не беда */
+	}
+}
+
+/* ──────────────────────────── инициализация ──────────────────────────── */
+
 /** Подписки на установку и обновления. Вызывается один раз из корневого layout. */
-export function initPwa() {
+export function initPwa(onNavigate) {
 	if (!browser) return () => {};
 
-	standalone.set(isStandalone());
+	standalone.set(detectStandalone());
+	if (typeof Notification !== 'undefined') notificationPermission.set(Notification.permission);
 
 	const onBeforeInstall = (event) => {
 		event.preventDefault(); // иначе Chrome покажет свой баннер и забудет событие
@@ -73,11 +124,19 @@ export function initPwa() {
 	window.addEventListener('beforeinstallprompt', onBeforeInstall);
 	window.addEventListener('appinstalled', onInstalled);
 
+	// Перезагружаем страницу только после того, как её об этом попросили
+	// кнопкой «Обновить». Первый clients.claim() тоже меняет контроллер — без
+	// этой проверки приложение само себя перезагружало на ровном месте.
 	let reloading = false;
 	const onControllerChange = () => {
-		if (reloading) return;
+		if (reloading || !updateRequested) return;
 		reloading = true;
 		location.reload();
+	};
+
+	// Клик по системному уведомлению просит открыть конкретный экран.
+	const onMessage = (event) => {
+		if (event.data?.type === 'navigate' && event.data.url) onNavigate?.(event.data.url);
 	};
 
 	navigator.serviceWorker?.ready
@@ -100,10 +159,12 @@ export function initPwa() {
 		})
 		.catch(() => {});
 	navigator.serviceWorker?.addEventListener('controllerchange', onControllerChange);
+	navigator.serviceWorker?.addEventListener('message', onMessage);
 
 	return () => {
 		window.removeEventListener('beforeinstallprompt', onBeforeInstall);
 		window.removeEventListener('appinstalled', onInstalled);
 		navigator.serviceWorker?.removeEventListener('controllerchange', onControllerChange);
+		navigator.serviceWorker?.removeEventListener('message', onMessage);
 	};
 }

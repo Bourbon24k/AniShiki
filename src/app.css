@@ -3,10 +3,14 @@
 @tailwind utilities;
 
 :root {
-	/* Нижняя зона безопасности iPhone отключена намеренно: панель прилегает к
-	   нижнему краю вплотную, индикатор «домой» проходит по её кромке. Полоса
-	   пустоты под меню в standalone-режиме этим и убирается. */
+	/* Зоны безопасности. --safe-bottom проставляет initShell(): в standalone
+	   под панелью живёт индикатор «домой» и отступ нужен, а во вкладке Safari
+	   его закрывает панель браузера и лишний отступ читается как дыра. */
 	--safe-bottom: 0px;
+	--safe-top: env(safe-area-inset-top, 0px);
+	--safe-left: env(safe-area-inset-left, 0px);
+	--safe-right: env(safe-area-inset-right, 0px);
+	--nav-height: 54px;
 	font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 	line-height: 1.5;
 	font-weight: 400;
@@ -119,6 +123,64 @@ body {
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 	touch-action: pan-y;
+	/* Резинка страницы выдаёт «сайт в браузере»: прокручиваются только
+	   внутренние области, сам документ не сдвигается. */
+	overscroll-behavior: none;
+	position: fixed;
+	inset: 0;
+}
+
+/* ── Ощущение приложения: без подсветки тапов и выделения интерфейса ── */
+a,
+button,
+[role='button'],
+input,
+select,
+textarea,
+summary {
+	-webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+.chip,
+.tab {
+	-webkit-touch-callout: none;
+}
+
+/* Текст статей и комментариев выделять можно, элементы управления — нет. */
+body {
+	-webkit-user-select: none;
+	user-select: none;
+}
+p,
+h1,
+h2,
+h3,
+input,
+textarea,
+[data-selectable] {
+	-webkit-user-select: text;
+	user-select: text;
+}
+
+/* iOS зумит страницу, если шрифт поля меньше 16px. */
+input,
+textarea,
+select {
+	font-size: 16px;
+}
+
+/* Пока открыта шторка, фон под ней не прокручивается. */
+body.sheet-open {
+	overflow: hidden;
+}
+
+/* Прокручиваемые области — с инерцией и без «протаскивания» родителя. */
+.scroll-area {
+	overflow-y: auto;
+	-webkit-overflow-scrolling: touch;
+	overscroll-behavior-y: contain;
 }
 
 a {
@@ -217,4 +279,94 @@ button {
 		width: 4px;
 		height: 4px;
 	}
+}
+
+
+/* ── Оболочка приложения ─────────────────────────────────────────────── */
+
+/* Переходы между экранами: новый экран приезжает справа, как в iOS. */
+@keyframes push-in {
+	from {
+		opacity: 0;
+		transform: translate3d(18px, 0, 0);
+	}
+}
+@keyframes pop-in {
+	from {
+		opacity: 0;
+		transform: translate3d(-18px, 0, 0);
+	}
+}
+
+.page-enter {
+	animation: push-in 0.26s cubic-bezier(0.22, 0.9, 0.26, 1) both;
+}
+.page-enter-back {
+	animation: pop-in 0.26s cubic-bezier(0.22, 0.9, 0.26, 1) both;
+}
+
+/* Тяжёлые эффекты стоит гасить: на телефоне они дают лишние кадры. */
+@media (max-width: 768px) {
+	.glass {
+		backdrop-filter: blur(14px);
+		-webkit-backdrop-filter: blur(14px);
+	}
+}
+
+/* На маленьком экране наведения нет — подъём карточки только мешает. */
+@media (hover: none) {
+	.card:hover {
+		transform: none !important;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+
+/* Экран-заставка: держится, пока приложение не отрисовалось. */
+#app-splash {
+	position: fixed;
+	inset: 0;
+	z-index: 9999;
+	display: grid;
+	place-items: center;
+	gap: 18px;
+	align-content: center;
+	background: var(--background-color, #0a0a0a);
+	transition: opacity 0.28s ease;
+}
+#app-splash.hide {
+	opacity: 0;
+	pointer-events: none;
+}
+#app-splash .mark-icon {
+	width: 96px;
+	height: 96px;
+	display: block;
+}
+#app-splash .mark {
+	font-size: 28px;
+	font-weight: 800;
+	letter-spacing: -0.5px;
+	color: #e8e6e2;
+}
+#app-splash .mark sup {
+	font-size: 12px;
+	color: #cc2e56;
+}
+#app-splash .ring {
+	width: 26px;
+	height: 26px;
+	border: 3px solid rgba(255, 255, 255, 0.14);
+	border-top-color: #cc2e56;
+	border-radius: 50%;
+	animation: spin 0.9s linear infinite;
 }

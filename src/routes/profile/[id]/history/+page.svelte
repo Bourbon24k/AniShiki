@@ -79,6 +79,8 @@
 	.list {
 		flex: 1;
 		min-height: 0;
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
 		padding-bottom: 24px;
 	}
 	@media (max-width: 768px) {

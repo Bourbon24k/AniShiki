@@ -2,16 +2,28 @@
 <html lang="ru" class="amoled-theme">
 	<head>
 		<meta charset="utf-8" />
-		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
 		<link rel="icon" type="image/png" sizes="192x192" href="%sveltekit.assets%/icon-192.png" />
-		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
-		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-		<meta name="theme-color" content="#0a0a0a" />
-		<!-- Standalone-режим на iOS: без этих тегов «на экран «Домой»» открывается в Safari -->
+		<link rel="icon" type="image/png" sizes="512x512" href="%sveltekit.assets%/icon-512.png" />
+		<!-- iOS берёт именно этот файл, и прозрачность в нём заливает чёрным,
+		     поэтому у него свой вариант с непрозрачным фоном. -->
+		<link rel="apple-touch-icon" sizes="180x180" href="%sveltekit.assets%/apple-touch-icon.png" />
+		<!-- maximum-scale=1 и user-scalable=no: в standalone на iOS случайный
+		     пинч растягивает интерфейс и обратно уже не собрать. -->
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+		/>
+		<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0a" />
+		<meta name="theme-color" media="(prefers-color-scheme: light)" content="#0a0a0a" />
+		<meta name="color-scheme" content="dark light" />
+		<!-- Standalone-режим на iOS: без этих тегов «На экран «Домой»» открывается в Safari -->
 		<meta name="mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<!-- black-translucent: контент уходит под статус-бар, отступ даёт вёрстка -->
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 		<meta name="apple-mobile-web-app-title" content="AniShiki" />
+		<meta name="format-detection" content="telephone=no" />
 		<meta name="description" content="AniShiki — неофициальный веб-клиент Anixart" />
 		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -20,9 +32,29 @@
 			href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap"
 			rel="stylesheet"
 		/>
+		<!-- Тема применяется до первого кадра: иначе в standalone мелькает
+		     чужой фон, пока не поднимется приложение. -->
+		<script>
+			(function () {
+				try {
+					var gui = JSON.parse(localStorage.getItem('guiSettings') || '{}');
+					document.documentElement.className = (gui.theme || 'amoled') + '-theme';
+				} catch (e) {
+					document.documentElement.className = 'amoled-theme';
+				}
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
-	<body data-sveltekit-preload-data="hover">
+	<body data-sveltekit-preload-data="tap">
+		<!-- Заставка запуска. iOS не показывает splash без набора PNG под каждый
+		     размер экрана, поэтому рисуем её сами и снимаем, когда приложение
+		     готово (см. +layout.svelte). -->
+		<div id="app-splash">
+			<img class="mark-icon" src="%sveltekit.assets%/favicon.svg" alt="" width="96" height="96" />
+			<span class="mark">AniShiki</span>
+			<span class="ring"></span>
+		</div>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

@@ -8,6 +8,7 @@
 	export let loading = false;
 	export let href = null;
 	export let numbered = false;
+	export let subtitle = null;
 
 	let scroller;
 	function scrollBy(dir) {
@@ -18,7 +19,10 @@
 <section class="row">
 	{#if title}
 		<header>
-			<h2>{title}</h2>
+			<div class="titles">
+				<h2>{title}</h2>
+				{#if subtitle}<span class="subtitle">{subtitle}</span>{/if}
+			</div>
 			<div class="actions">
 				{#if href}<a class="all" {href}>Все <Icon name="chevronRight" size={16} /></a>{/if}
 				<button class="nav" on:click={() => scrollBy(-1)} aria-label="Назад"><Icon name="back" size={18} /></button>
@@ -53,10 +57,22 @@
 		margin: 0 0 14px;
 		padding: 0 4px;
 	}
+	.titles {
+		min-width: 0;
+	}
 	h2 {
 		font-size: 20px;
 		font-weight: 700;
 		letter-spacing: -0.3px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.subtitle {
+		display: block;
+		font-size: 12.5px;
+		color: var(--third-text-color);
+		margin-top: 1px;
 	}
 	.actions {
 		display: flex;

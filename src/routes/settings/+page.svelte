@@ -1,41 +1,315 @@
 <script>
+	/**
+	 * Настройки.
+	 *
+	 * Раньше здесь были только тема, плеер и эндпоинт. Теперь сюда же вынесено
+	 * всё, что Anixart позволяет менять в профиле через API: никнейм, статус,
+	 * аватар, соцсети, приватность и подписки на уведомления. Каждый раздел
+	 * открывается шторкой, чтобы список настроек оставался обозримым.
+	 */
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { guiSettings, endpointUrl, playingSettings, userToken, notificationCount, showToast } from '$lib/stores';
-	import { reinitApi } from '$lib/api';
-	import { themeValues, endpointValues, sourceValues, qualityValues } from '$lib/utils';
+	import {
+		guiSettings,
+		endpointUrl,
+		playingSettings,
+		playerSettings,
+		userToken,
+		notificationCount,
+		showToast
+	} from '$lib/stores';
+	import { getApi, reinitApi } from '$lib/api';
+	import {
+		themeValues,
+		endpointValues,
+		sourceValues,
+		qualityValues,
+		aspectRatioValues,
+		playerSpeedValues,
+		privacyOptions
+	} from '$lib/utils';
+	import { uploadAvatar } from '$lib/anixart';
+	import { clearCatalogCache } from '$lib/catalog';
 	import { supabaseEnabled } from '$lib/supabase';
 	import { siteSession, siteProfile, siteSignOut, currentSiteName } from '$lib/stores/auth';
+	import {
+		standalone,
+		notificationPermission,
+		requestNotifications,
+		showLocalNotification,
+		installPrompt,
+		promptInstall,
+		isIosSafari
+	} from '$lib/pwa';
 	import Icon from '$lib/components/Icon.svelte';
+	import Sheet from '$lib/components/Sheet.svelte';
+
+	/* ── состояние аккаунта Anixart ── */
+
+	let prefs = null; // /profile/preference/my
+	let me = null; // профиль целиком: оттуда флаги уведомлений
+	let loadingAccount = false;
+
+	let sheet = null; // 'login' | 'status' | 'avatar' | 'social' | 'privacy' | 'notifications'
+	let saving = false;
+
+	let loginDraft = '';
+	let statusDraft = '';
+	let socialDraft = { vkPage: '', tgPage: '', ttPage: '', instPage: '', discordPage: '' };
+	let avatarInput;
+	let avatarBusy = false;
+
+	const privacyKeys = [
+		{ key: 'stats', field: 'privacy_stats', label: 'Статистика, оценки и история', method: 'setPrivacyStats' },
+		{ key: 'counts', field: 'privacy_counts', label: 'Комментарии, коллекции, друзья', method: 'setPrivacyCounts' },
+		{ key: 'social', field: 'privacy_social', label: 'Социальные сети', method: 'setPrivacySocial' }
+	];
+
+	// У заявок в друзья свой набор значений: 0 — все, 1 — никто.
+	const friendRequestOptions = [
+		{ value: 0, label: 'Все пользователи' },
+		{ value: 1, label: 'Никто' }
+	];
+
+	const notificationToggles = [
+		{ field: 'is_episode_notifications_enabled', method: 'setEpisodeNotification', label: 'Новые серии' },
+		{ field: 'is_related_release_notifications_enabled', method: 'setRelatedReleaseNotification', label: 'Связанные релизы' },
+		{ field: 'is_comment_notifications_enabled', method: 'setCommentNotification', label: 'Ответы на комментарии' },
+		{ field: 'is_my_collection_comment_notifications_enabled', method: 'setCollectionCommentNotification', label: 'Комментарии в моих коллекциях' },
+		{ field: 'is_report_process_notifications_enabled', method: 'setReportProgressNotification', label: 'Обработка жалоб' }
+	];
+
+	async function loadAccount() {
+		if (!$userToken) return;
+		loadingAccount = true;
+		const api = getApi();
+		const [p, profile] = await Promise.all([
+			api.settings.getCurrentProfileSettings().catch((e) => {
+				console.error('preferences', e);
+				return null;
+			}),
+			api.profile
+				.info(Number($userToken.id))
+				.then((d) => d?.profile)
+				.catch((e) => {
+					console.error('profile', e);
+					return null;
+				})
+		]);
+		prefs = p;
+		me = profile;
+		loadingAccount = false;
+	}
+
+	function openSheet(name) {
+		if (name === 'status') statusDraft = me?.status || prefs?.status || '';
+		if (name === 'login') loginDraft = $userToken?.login || me?.login || '';
+		if (name === 'social') {
+			socialDraft = {
+				vkPage: me?.vk_page || '',
+				tgPage: me?.tg_page || '',
+				ttPage: me?.tt_page || '',
+				instPage: me?.inst_page || '',
+				discordPage: me?.discord_page || ''
+			};
+		}
+		sheet = name;
+	}
+
+	async function saveStatus() {
+		saving = true;
+		try {
+			await getApi().settings.setStatus(statusDraft.trim());
+			me = { ...me, status: statusDraft.trim() };
+			showToast('Статус обновлён', 'success');
+			sheet = null;
+		} catch (e) {
+			console.error('status', e);
+			showToast('Не удалось сохранить статус', 'error');
+		}
+		saving = false;
+	}
+
+	async function saveLogin() {
+		const value = loginDraft.trim();
+		if (!value) return showToast('Никнейм не может быть пустым', 'error');
+		saving = true;
+		try {
+			await getApi().settings.changeLogin(value);
+			userToken.update((t) => (t ? { ...t, login: value } : t));
+			showToast('Никнейм изменён', 'success');
+			sheet = null;
+		} catch (e) {
+			console.error('login', e);
+			// code 3 — такой ник уже занят; остальное разбирать смысла нет.
+			showToast(e?.code === 3 ? 'Такой никнейм уже занят' : 'Не удалось сменить никнейм', 'error');
+		}
+		saving = false;
+	}
+
+	/** Ссылки вида vk.com/name сервер не принимает — оставляем голый ник. */
+	function cleanHandle(value) {
+		return String(value || '')
+			.trim()
+			.replace(/^https?:\/\/(www\.)?/i, '')
+			.replace(/^(vk\.com|t\.me|telegram\.me|tiktok\.com|instagram\.com|discord\.com)\//i, '')
+			.replace(/^@/, '')
+			.replace(/\/+$/, '');
+	}
+
+	async function saveSocial() {
+		saving = true;
+		try {
+			await getApi().settings.setSocial({
+				vk_page: cleanHandle(socialDraft.vkPage),
+				tg_page: cleanHandle(socialDraft.tgPage),
+				tt_page: cleanHandle(socialDraft.ttPage),
+				inst_page: cleanHandle(socialDraft.instPage),
+				discord_page: cleanHandle(socialDraft.discordPage)
+			});
+			me = {
+				...me,
+				vk_page: cleanHandle(socialDraft.vkPage),
+				tg_page: cleanHandle(socialDraft.tgPage),
+				tt_page: cleanHandle(socialDraft.ttPage),
+				inst_page: cleanHandle(socialDraft.instPage),
+				discord_page: cleanHandle(socialDraft.discordPage)
+			};
+			showToast('Соцсети сохранены', 'success');
+			sheet = null;
+		} catch (e) {
+			console.error('social', e);
+			showToast('Не удалось сохранить', 'error');
+		}
+		saving = false;
+	}
+
+	async function onAvatarPicked(event) {
+		const file = event.target.files?.[0];
+		event.target.value = '';
+		if (!file) return;
+		if (file.size > 5 * 1024 * 1024) return showToast('Файл больше 5 МБ', 'error');
+		avatarBusy = true;
+		try {
+			await uploadAvatar(file);
+			await loadAccount();
+			if (me?.avatar) userToken.update((t) => (t ? { ...t, avatar: me.avatar } : t));
+			showToast('Аватар обновлён', 'success');
+		} catch (e) {
+			console.error('avatar', e);
+			showToast('Не удалось загрузить аватар', 'error');
+		}
+		avatarBusy = false;
+	}
+
+	async function setPrivacy(item, value) {
+		const previous = prefs?.[item.field];
+		prefs = { ...prefs, [item.field]: value };
+		try {
+			await getApi().settings[item.method](Number(value));
+			showToast('Настройка сохранена', 'success');
+		} catch (e) {
+			console.error('privacy', e);
+			prefs = { ...prefs, [item.field]: previous };
+			showToast('Не удалось сохранить', 'error');
+		}
+	}
+
+	async function setFriendRequests(value) {
+		const previous = prefs?.privacy_friend_requests;
+		prefs = { ...prefs, privacy_friend_requests: value };
+		try {
+			await getApi().settings.setPrivacyFriendRequests(Number(value));
+			showToast('Настройка сохранена', 'success');
+		} catch (e) {
+			console.error('friend requests', e);
+			prefs = { ...prefs, privacy_friend_requests: previous };
+			showToast('Не удалось сохранить', 'error');
+		}
+	}
+
+	/** Ручки уведомлений Anixart переключают состояние, а не задают его. */
+	async function toggleNotification(item) {
+		const previous = !!me?.[item.field];
+		me = { ...me, [item.field]: !previous };
+		try {
+			await getApi().settings[item.method]();
+		} catch (e) {
+			console.error('notification setting', e);
+			me = { ...me, [item.field]: previous };
+			showToast('Не удалось изменить', 'error');
+		}
+	}
+
+	/* ── локальные настройки ── */
+
+	function setTheme(theme) {
+		guiSettings.update((s) => ({ ...s, theme }));
+	}
+	function setCardType(releaseCardType) {
+		guiSettings.update((s) => ({ ...s, releaseCardType }));
+	}
+	function setEndpoint(value) {
+		endpointUrl.set(value);
+		reinitApi();
+		clearCatalogCache();
+		showToast('Сервер изменён', 'success');
+	}
+	function patchPlaying(patch) {
+		playingSettings.update((s) => ({ ...s, ...patch }));
+	}
+	function patchPlayer(patch) {
+		playerSettings.update((s) => ({ ...s, ...patch }));
+	}
+
+	/* ── приложение ── */
+
+	async function enableSystemNotifications() {
+		const result = await requestNotifications();
+		if (result === 'granted') {
+			showToast('Уведомления включены', 'success');
+			showLocalNotification({
+				title: 'Уведомления включены',
+				body: 'Сообщим, когда выйдет новая серия',
+				url: '/notifications'
+			});
+		} else if (result === 'denied') {
+			showToast('Разрешение отклонено — включите его в настройках устройства', 'error');
+		}
+	}
+
+	async function install() {
+		if ($installPrompt) await promptInstall($installPrompt);
+	}
+
+	async function clearCaches() {
+		clearCatalogCache();
+		try {
+			const keys = await caches.keys();
+			await Promise.all(keys.filter((k) => !k.startsWith('anishiki-app-')).map((k) => caches.delete(k)));
+			showToast('Кэш очищен', 'success');
+		} catch (e) {
+			console.error('clear caches', e);
+			showToast('Не удалось очистить кэш', 'error');
+		}
+	}
 
 	async function siteLogout() {
 		await siteSignOut();
 		showToast('Вы вышли из аккаунта AniShiki', 'info');
 	}
 
-	function setTheme(t) {
-		guiSettings.update((s) => ({ ...s, theme: t }));
-	}
-	function setEndpoint(v) {
-		endpointUrl.set(v);
-		reinitApi();
-		showToast('Сервер изменён', 'success');
-	}
-	function setSource(v) {
-		playingSettings.update((s) => ({ ...s, defaultSource: v }));
-	}
-	function setQuality(v) {
-		playingSettings.update((s) => ({ ...s, defaultQuality: v }));
-	}
-	function toggleHistory() {
-		playingSettings.update((s) => ({ ...s, disableHistory: !s.disableHistory }));
-	}
 	function logout() {
 		userToken.set(null);
 		notificationCount.set(0);
+		prefs = null;
+		me = null;
 		reinitApi();
 		showToast('Вы вышли', 'info');
 		goto('/');
 	}
+
+	onMount(loadAccount);
 </script>
 
 <svelte:head><title>Настройки — AniShiki</title></svelte:head>
@@ -48,34 +322,88 @@
 			<section class="card">
 				<a class="account" href={`/profile/${$userToken.id}`}>
 					<div class="ava">
-						{#if $userToken.avatar}<img src={$userToken.avatar} alt="" referrerpolicy="no-referrer" />{:else}<Icon name="user" size={26} />{/if}
+						{#if me?.avatar || $userToken.avatar}
+							<img src={me?.avatar || $userToken.avatar} alt="" referrerpolicy="no-referrer" />
+						{:else}
+							<Icon name="user" size={26} />
+						{/if}
 					</div>
-					<div>
+					<div class="who">
 						<span class="login">{$userToken.login}</span>
-						<span class="sub">Открыть профиль</span>
+						<span class="sub">{me?.status || 'Открыть профиль'}</span>
 					</div>
 					<Icon name="chevronRight" size={20} />
 				</a>
+
+				<div class="rows">
+					<button class="row" on:click={() => avatarInput.click()} disabled={avatarBusy}>
+						<Icon name="user" size={18} />
+						<span>Аватар</span>
+						<span class="value">{avatarBusy ? 'Загрузка…' : 'Заменить'}</span>
+						<Icon name="chevronRight" size={17} />
+					</button>
+					<button class="row" on:click={() => openSheet('login')}>
+						<Icon name="feed" size={18} />
+						<span>Никнейм</span>
+						<span class="value">{$userToken.login}</span>
+						<Icon name="chevronRight" size={17} />
+					</button>
+					<button class="row" on:click={() => openSheet('status')}>
+						<Icon name="star" size={18} />
+						<span>Статус</span>
+						<span class="value">{me?.status ? 'Изменить' : 'Не задан'}</span>
+						<Icon name="chevronRight" size={17} />
+					</button>
+					<button class="row" on:click={() => openSheet('social')}>
+						<Icon name="friends" size={18} />
+						<span>Социальные сети</span>
+						<Icon name="chevronRight" size={17} />
+					</button>
+					<button class="row" on:click={() => openSheet('privacy')}>
+						<Icon name="bookmark" size={18} />
+						<span>Приватность</span>
+						<Icon name="chevronRight" size={17} />
+					</button>
+					<button class="row" on:click={() => openSheet('notifications')}>
+						<Icon name="notification" size={18} />
+						<span>Уведомления Anixart</span>
+						<Icon name="chevronRight" size={17} />
+					</button>
+				</div>
+
+				<input type="file" accept="image/*" bind:this={avatarInput} on:change={onAvatarPicked} hidden />
 				<button class="logout" on:click={logout}>Выйти из аккаунта</button>
 			</section>
 		{:else}
 			<section class="card">
 				<a class="login-cta" href="/login">Войти в аккаунт Anixart</a>
+				<p class="hint center">С аккаунтом синхронизируются списки, оценки и комментарии.</p>
 			</section>
 		{/if}
 
 		{#if supabaseEnabled}
 			<section class="card">
-				<h2 class="card-title">Аккаунт AniShiki</h2>
+				<h2>Аккаунт AniShiki</h2>
 				{#if $siteSession}
 					<div class="account static">
 						<div class="ava">
-							{#if $siteProfile?.avatar_url}<img src={$siteProfile.avatar_url} alt="" referrerpolicy="no-referrer" />{:else}<Icon name="user" size={26} />{/if}
+							{#if $siteProfile?.avatar_url}
+								<img src={$siteProfile.avatar_url} alt="" referrerpolicy="no-referrer" />
+							{:else}
+								<Icon name="user" size={26} />
+							{/if}
 						</div>
-						<div>
+						<div class="who">
 							<span class="login">{currentSiteName()}</span>
 							<span class="sub">{$siteSession.user?.email}</span>
 						</div>
+					</div>
+					<div class="rows">
+						<a class="row" href="/me">
+							<Icon name="settings" size={18} />
+							<span>Профиль и статистика</span>
+							<Icon name="chevronRight" size={17} />
+						</a>
 					</div>
 					<button class="logout" on:click={siteLogout}>Выйти из аккаунта AniShiki</button>
 				{:else}
@@ -94,6 +422,13 @@
 					{/each}
 				</div>
 			</div>
+			<div class="field">
+				<span class="label">Карточки в списках</span>
+				<div class="chips">
+					<button class="chip" class:active={$guiSettings.releaseCardType !== 'poster'} on:click={() => setCardType('grid')}>С подписью</button>
+					<button class="chip" class:active={$guiSettings.releaseCardType === 'poster'} on:click={() => setCardType('poster')}>Только постер</button>
+				</div>
+			</div>
 		</section>
 
 		<section class="card">
@@ -102,7 +437,7 @@
 				<span class="label">Источник по умолчанию</span>
 				<div class="chips">
 					{#each sourceValues as s}
-						<button class="chip" class:active={$playingSettings.defaultSource === s.value} on:click={() => setSource(s.value)}>{s.label}</button>
+						<button class="chip" class:active={$playingSettings.defaultSource === s.value} on:click={() => patchPlaying({ defaultSource: s.value })}>{s.label}</button>
 					{/each}
 				</div>
 			</div>
@@ -110,18 +445,113 @@
 				<span class="label">Качество по умолчанию</span>
 				<div class="chips">
 					{#each qualityValues as q}
-						<button class="chip" class:active={$playingSettings.defaultQuality === q.value} on:click={() => setQuality(q.value)}>{q.label}</button>
+						<button class="chip" class:active={$playingSettings.defaultQuality === q.value} on:click={() => patchPlaying({ defaultQuality: q.value })}>{q.label}</button>
 					{/each}
 				</div>
+			</div>
+			<div class="field">
+				<span class="label">Скорость по умолчанию</span>
+				<div class="chips">
+					{#each playerSpeedValues as s}
+						<button class="chip" class:active={$playerSettings.defaultSpeed === s.value} on:click={() => patchPlayer({ defaultSpeed: s.value })}>{s.label}</button>
+					{/each}
+				</div>
+			</div>
+			<div class="field">
+				<span class="label">Соотношение сторон</span>
+				<div class="chips">
+					{#each aspectRatioValues as a}
+						<button class="chip" class:active={$playerSettings.defaultAspectRatio === a.value} on:click={() => patchPlayer({ defaultAspectRatio: a.value })}>{a.label}</button>
+					{/each}
+				</div>
+			</div>
+			<div class="field row">
+				<div>
+					<span class="label">Автоматически включать следующую серию</span>
+				</div>
+				<button
+					class="toggle"
+					class:on={$playerSettings.autoplayEpisode}
+					on:click={() => patchPlayer({ autoplayEpisode: !$playerSettings.autoplayEpisode })}
+					aria-label="Переключить"
+				><span class="knob"></span></button>
+			</div>
+			<div class="field row">
+				<div>
+					<span class="label">Помнить громкость</span>
+					<span class="hint">Уровень звука сохраняется между сериями</span>
+				</div>
+				<button
+					class="toggle"
+					class:on={$playerSettings.saveUserVolume?.enabled}
+					on:click={() =>
+						patchPlayer({
+							saveUserVolume: {
+								...$playerSettings.saveUserVolume,
+								enabled: !$playerSettings.saveUserVolume?.enabled
+							}
+						})}
+					aria-label="Переключить"
+				><span class="knob"></span></button>
 			</div>
 			<div class="field row">
 				<div>
 					<span class="label">Не сохранять историю просмотра</span>
 					<span class="hint">Эпизоды не будут отмечаться как просмотренные</span>
 				</div>
-				<button class="toggle" class:on={$playingSettings.disableHistory} on:click={toggleHistory} aria-label="Переключить">
-					<span class="knob"></span>
-				</button>
+				<button
+					class="toggle"
+					class:on={$playingSettings.disableHistory}
+					on:click={() => patchPlaying({ disableHistory: !$playingSettings.disableHistory })}
+					aria-label="Переключить"
+				><span class="knob"></span></button>
+			</div>
+		</section>
+
+		<section class="card">
+			<h2>Приложение</h2>
+			<div class="field row">
+				<div>
+					<span class="label">Системные уведомления</span>
+					<span class="hint">
+						{#if $notificationPermission === 'granted'}
+							Разрешены — сообщим о новых сериях
+						{:else if $notificationPermission === 'denied'}
+							Запрещены в настройках устройства
+						{:else if !$standalone && isIosSafari()}
+							На iPhone доступны только в установленном приложении
+						{:else}
+							Сообщим, когда выйдет серия из списка «Смотрю»
+						{/if}
+					</span>
+				</div>
+				{#if $notificationPermission === 'default'}
+					<button class="mini" on:click={enableSystemNotifications}>Включить</button>
+				{/if}
+			</div>
+
+			{#if !$standalone}
+				<div class="field row">
+					<div>
+						<span class="label">Установить приложение</span>
+						<span class="hint">
+							{isIosSafari()
+								? 'Поделиться → «На экран «Домой»'
+								: 'Ярлык, полный экран и работа офлайн'}
+						</span>
+					</div>
+					{#if $installPrompt}
+						<button class="mini" on:click={install}>Установить</button>
+					{/if}
+				</div>
+			{/if}
+
+			<div class="field row">
+				<div>
+					<span class="label">Очистить кэш</span>
+					<span class="hint">Постеры и сохранённые списки. Аккаунт и настройки не тронем.</span>
+				</div>
+				<button class="mini" on:click={clearCaches}>Очистить</button>
 			</div>
 		</section>
 
@@ -145,10 +575,102 @@
 	</div>
 </div>
 
+<!-- ── шторки ── -->
+
+<Sheet open={sheet === 'login'} title="Никнейм" on:close={() => (sheet = null)}>
+	<label class="f">
+		<span>Новый никнейм</span>
+		<input bind:value={loginDraft} maxlength="24" placeholder="Никнейм" />
+	</label>
+	<p class="hint">Anixart разрешает менять никнейм не чаще, чем раз в некоторое время.</p>
+	<svelte:fragment slot="footer">
+		<button class="btn primary wide" on:click={saveLogin} disabled={saving}>
+			{saving ? 'Сохранение…' : 'Сохранить'}
+		</button>
+	</svelte:fragment>
+</Sheet>
+
+<Sheet open={sheet === 'status'} title="Статус" on:close={() => (sheet = null)}>
+	<label class="f">
+		<span>О себе</span>
+		<textarea bind:value={statusDraft} rows="4" maxlength="255" placeholder="Пара слов о себе"></textarea>
+	</label>
+	<p class="hint">{statusDraft.length}/255</p>
+	<svelte:fragment slot="footer">
+		<button class="btn primary wide" on:click={saveStatus} disabled={saving}>
+			{saving ? 'Сохранение…' : 'Сохранить'}
+		</button>
+	</svelte:fragment>
+</Sheet>
+
+<Sheet open={sheet === 'social'} title="Социальные сети" on:close={() => (sheet = null)}>
+	<label class="f"><span>VK</span><input bind:value={socialDraft.vkPage} placeholder="username" /></label>
+	<label class="f"><span>Telegram</span><input bind:value={socialDraft.tgPage} placeholder="username" /></label>
+	<label class="f"><span>TikTok</span><input bind:value={socialDraft.ttPage} placeholder="username" /></label>
+	<label class="f"><span>Instagram</span><input bind:value={socialDraft.instPage} placeholder="username" /></label>
+	<label class="f"><span>Discord</span><input bind:value={socialDraft.discordPage} placeholder="username" /></label>
+	<p class="hint">Достаточно имени пользователя — ссылку соберём сами.</p>
+	<svelte:fragment slot="footer">
+		<button class="btn primary wide" on:click={saveSocial} disabled={saving}>
+			{saving ? 'Сохранение…' : 'Сохранить'}
+		</button>
+	</svelte:fragment>
+</Sheet>
+
+<Sheet open={sheet === 'privacy'} title="Приватность" tall on:close={() => (sheet = null)}>
+	{#if loadingAccount}
+		<p class="hint">Загрузка…</p>
+	{:else}
+		{#each privacyKeys as item}
+			<div class="fgroup">
+				<h3>{item.label}</h3>
+				<div class="chips">
+					{#each privacyOptions as o}
+						<button
+							class="chip small"
+							class:active={Number(prefs?.[item.field]) === o.value}
+							on:click={() => setPrivacy(item, o.value)}
+						>{o.label}</button>
+					{/each}
+				</div>
+			</div>
+		{/each}
+		<div class="fgroup">
+			<h3>Кто может отправлять заявки в друзья</h3>
+			<div class="chips">
+				{#each friendRequestOptions as o}
+					<button
+						class="chip small"
+						class:active={Number(prefs?.privacy_friend_requests) === o.value}
+						on:click={() => setFriendRequests(o.value)}
+					>{o.label}</button>
+				{/each}
+			</div>
+		</div>
+	{/if}
+</Sheet>
+
+<Sheet open={sheet === 'notifications'} title="Уведомления Anixart" on:close={() => (sheet = null)}>
+	{#if loadingAccount}
+		<p class="hint">Загрузка…</p>
+	{:else}
+		{#each notificationToggles as item}
+			<div class="field row bordered">
+				<span class="label">{item.label}</span>
+				<button class="toggle" class:on={me?.[item.field]} on:click={() => toggleNotification(item)} aria-label="Переключить">
+					<span class="knob"></span>
+				</button>
+			</div>
+		{/each}
+		<p class="hint">Это подписки на стороне Anixart — они приходят в раздел «События».</p>
+	{/if}
+</Sheet>
+
 <style>
 	.page {
 		height: 100%;
 		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
 	}
 	.inner {
 		max-width: 720px;
@@ -181,6 +703,7 @@
 	.ava {
 		width: 54px;
 		height: 54px;
+		min-width: 54px;
 		border-radius: 50%;
 		overflow: hidden;
 		display: grid;
@@ -193,18 +716,62 @@
 		height: 100%;
 		object-fit: cover;
 	}
-	.account .login {
+	.who {
+		flex: 1;
+		min-width: 0;
+	}
+	.login {
 		display: block;
 		font-weight: 700;
 		font-size: 16px;
 	}
-	.account .sub {
+	.sub {
+		display: block;
 		font-size: 13px;
 		color: var(--secondary-text-color);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
-	.account > div:nth-child(2) {
+
+	.rows {
+		margin-top: 16px;
+		border-top: 1px solid var(--glass-border);
+	}
+	.row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		width: 100%;
+		padding: 13px 2px;
+		border: none;
+		border-bottom: 1px solid var(--glass-border);
+		background: transparent;
+		color: var(--text-color);
+		font-size: 14.5px;
+		font-weight: 500;
+		text-align: left;
+		cursor: pointer;
+	}
+	.row:last-child {
+		border-bottom: none;
+	}
+	.row > span:first-of-type {
 		flex: 1;
 	}
+	.row .value {
+		flex: 0 1 auto;
+		font-size: 13px;
+		color: var(--third-text-color);
+		max-width: 45%;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.row:disabled {
+		opacity: 0.6;
+	}
+
 	.logout {
 		width: 100%;
 		margin-top: 16px;
@@ -225,6 +792,7 @@
 		border-radius: 12px;
 		font-weight: 700;
 	}
+
 	.field {
 		margin-bottom: 18px;
 	}
@@ -236,6 +804,11 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 16px;
+	}
+	.field.row.bordered {
+		padding: 12px 0;
+		margin-bottom: 0;
+		border-bottom: 1px solid var(--glass-border);
 	}
 	.label {
 		display: block;
@@ -251,6 +824,10 @@
 		font-size: 12px;
 		color: var(--third-text-color);
 		margin-top: 8px;
+		line-height: 1.5;
+	}
+	.hint.center {
+		text-align: center;
 	}
 	.field.row .hint {
 		margin-top: 0;
@@ -270,10 +847,25 @@
 		font-size: 13px;
 		font-weight: 500;
 	}
+	.chip.small {
+		padding: 8px 13px;
+		font-size: 12.5px;
+	}
 	.chip.active {
 		background: var(--primary-color);
 		color: #fff;
 		border-color: transparent;
+	}
+	.mini {
+		flex-shrink: 0;
+		padding: 9px 15px;
+		border-radius: 11px;
+		border: 1px solid var(--glass-border);
+		background: var(--background-color);
+		color: var(--text-color);
+		font-size: 13px;
+		font-weight: 600;
+		cursor: pointer;
 	}
 	.toggle {
 		width: 52px;
@@ -302,6 +894,67 @@
 	.toggle.on .knob {
 		transform: translateX(22px);
 	}
+
+	/* шторки */
+	.f {
+		display: block;
+		margin: 14px 0;
+	}
+	.f span {
+		display: block;
+		font-size: 12.5px;
+		font-weight: 600;
+		color: var(--secondary-text-color);
+		margin-bottom: 7px;
+	}
+	.f input,
+	.f textarea {
+		width: 100%;
+		padding: 12px 14px;
+		border-radius: 12px;
+		border: 1px solid var(--glass-border);
+		background: var(--background-color);
+		color: var(--text-color);
+		font-family: inherit;
+		outline: none;
+		resize: vertical;
+	}
+	.f input:focus,
+	.f textarea:focus {
+		border-color: var(--primary-color);
+	}
+	.fgroup {
+		padding: 14px 0;
+		border-bottom: 1px solid var(--glass-border);
+	}
+	.fgroup:last-child {
+		border-bottom: none;
+	}
+	.fgroup h3 {
+		font-size: 14px;
+		font-weight: 700;
+		margin-bottom: 10px;
+	}
+	.btn {
+		padding: 13px;
+		border-radius: 13px;
+		font-weight: 700;
+		font-size: 14.5px;
+		cursor: pointer;
+		border: 1px solid var(--glass-border);
+	}
+	.btn.primary {
+		background: var(--primary-color);
+		border-color: transparent;
+		color: #fff;
+	}
+	.btn.wide {
+		width: 100%;
+	}
+	.btn:disabled {
+		opacity: 0.6;
+	}
+
 	.about {
 		text-align: center;
 		font-size: 13px;

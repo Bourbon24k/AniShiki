@@ -13,6 +13,8 @@
 	$: progress = Number(anime?.progress) || 0;
 	$: poster = thumb(anime?.image || anime?.poster, { w: type === 'full-row' ? 256 : 320 });
 	$: epStr = returnEpisodeString(anime);
+	// Своя оценка приходит под разными именами в зависимости от ручки.
+	$: myVote = Number(anime?.your_vote ?? anime?.my_vote ?? 0) || 0;
 	$: hasMeta = epStr !== '?' || anime?.year != null;
 </script>
 
@@ -33,7 +35,11 @@
 		{#if anime?.age_rating != null}
 			<span class="age">{getAgeRate(anime?.age_rating)}</span>
 		{/if}
-		{#if anime?.grade}
+		{#if myVote > 0}
+			<span class="my-vote" title={`Ваша оценка: ${myVote} из 5`}>
+				<Icon name="star" size={12} fill="#fff" />{myVote}
+			</span>
+		{:else if anime?.grade}
 			<span class="grade"><Icon name="star" size={12} fill="#ffc107" />{anime.grade.toFixed(1)}</span>
 		{/if}
 		{#if anime?.href}
@@ -138,7 +144,8 @@
 
 	.status,
 	.age,
-	.grade {
+	.grade,
+	.my-vote {
 		position: absolute;
 		padding: 3px 7px;
 		border-radius: 7px;
@@ -166,6 +173,16 @@
 		gap: 3px;
 		color: #fff;
 		background: rgba(0, 0, 0, 0.62);
+	}
+	/* Своя оценка важнее общей — показываем её вместо среднего балла. */
+	.my-vote {
+		bottom: 8px;
+		right: 8px;
+		display: flex;
+		align-items: center;
+		gap: 3px;
+		color: #fff;
+		background: var(--primary-color);
 	}
 
 	/* «Продолжить просмотр»: кнопка воспроизведения и полоса прогресса */
