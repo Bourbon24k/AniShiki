@@ -46,7 +46,7 @@
 				<span class="name">{utoken.login}</span>
 			</a>
 		{:else if site}
-			<a href="/me" class="user" on:click={close}>
+			<a href={`/u/${site.user.id}`} class="user" on:click={close}>
 				{#if $siteProfile?.avatar_url}
 					<img src={$siteProfile.avatar_url} alt="" referrerpolicy="no-referrer" />
 				{:else}

@@ -12,7 +12,7 @@
 	export let showBack = false;
 
 	$: avatar = $userToken?.avatar || $siteProfile?.avatar_url || null;
-	$: profileHref = $userToken ? `/profile/${$userToken.id}` : $siteSession ? '/me' : '/login';
+	$: profileHref = $userToken ? `/profile/${$userToken.id}` : $siteSession ? `/u/${$siteSession.user.id}` : '/login';
 
 	function back() {
 		haptic('light');

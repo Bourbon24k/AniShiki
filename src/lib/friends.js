@@ -112,3 +112,21 @@ export async function removeFriend(userId) {
 			`and(requester.eq.${uid()},addressee.eq.${userId}),and(requester.eq.${userId},addressee.eq.${uid()})`
 		);
 }
+
+/**
+ * Отношение с пользователем: 'none' | 'outgoing' | 'incoming' | 'friends'.
+ * Нужно профилю, чтобы кнопка знала, что предлагать.
+ */
+export async function friendStatusWith(userId) {
+	if (!supabase || !uid() || !userId || userId === uid()) return 'none';
+	const { data } = await supabase
+		.from('friendships')
+		.select('requester, addressee, status')
+		.or(
+			`and(requester.eq.${uid()},addressee.eq.${userId}),and(requester.eq.${userId},addressee.eq.${uid()})`
+		)
+		.maybeSingle();
+	if (!data) return 'none';
+	if (data.status === 'accepted') return 'friends';
+	return data.requester === uid() ? 'outgoing' : 'incoming';
+}

@@ -19,7 +19,7 @@
 	// доступ к закладкам/истории: аккаунт Anixart ИЛИ аккаунт сайта
 	$: ok = (item) => !item.auth || utoken || (item.site && site);
 
-	$: accountHref = utoken ? `/profile/${utoken.id}` : site ? '/me' : '/login';
+	$: accountHref = utoken ? `/profile/${utoken.id}` : site ? `/u/${site.user.id}` : '/login';
 	$: accountName = utoken?.login || $siteProfile?.username || 'Войти';
 	$: accountAvatar = utoken?.avatar || $siteProfile?.avatar_url || null;
 

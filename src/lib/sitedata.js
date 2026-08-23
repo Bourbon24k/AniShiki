@@ -14,6 +14,18 @@ function toCard(row) {
 	return { id: row.release_id, title_ru: row.title, image: row.image };
 }
 
+/**
+ * Жанры релиза строкой. Кладём их в каждую пользовательскую строку, чтобы
+ * «любимые жанры» в профиле считались локально: иначе на каждый профиль
+ * пришлось бы запрашивать у API карточку каждого релиза из списков.
+ */
+function genresOf(release) {
+	const raw = release?.genres;
+	if (!raw) return null;
+	if (Array.isArray(raw)) return raw.map((g) => g?.name || g).filter(Boolean).join(', ') || null;
+	return String(raw) || null;
+}
+
 export async function listFavorites() {
 	if (!supabase || !uid()) return [];
 	const { data } = await supabase
@@ -41,7 +53,8 @@ export async function addFavorite(release) {
 		user_id: uid(),
 		release_id: release.id,
 		title: release.title_ru || release.title || null,
-		image: release.image || null
+		image: release.image || null,
+		genres: genresOf(release)
 	});
 	if (error) throw error;
 }
@@ -74,6 +87,8 @@ export async function saveHistory(release, { episodePosition, sourceId, dubberId
 		release_id: release.id,
 		title: release.title_ru || release.title || null,
 		image: release.image || null,
+		genres: genresOf(release),
+		episodes_total: Number(release?.episodes_total) || Number(release?.episodes_released) || null,
 		episode_position: episodePosition ?? null,
 		source_id: sourceId ?? null,
 		dubber_id: dubberId ?? null,
@@ -200,6 +215,7 @@ export async function setListStatus(release, status) {
 		status,
 		title: release.title_ru || release.title || null,
 		image: release.image || null,
+		genres: genresOf(release),
 		updated_at: new Date().toISOString()
 	});
 	if (error) throw error;
@@ -261,6 +277,7 @@ export async function setRating(release, vote) {
 		vote,
 		title: release.title_ru || release.title || null,
 		image: release.image || null,
+		genres: genresOf(release),
 		updated_at: new Date().toISOString()
 	});
 	if (error) throw error;
@@ -272,7 +289,7 @@ export async function watchStats() {
 	if (!supabase || !uid()) return { hours: 0, episodes: 0, avgRating: 0 };
 	const u = uid();
 	const [hist, rated] = await Promise.all([
-		supabase.from('history').select('seconds').eq('user_id', u),
+		supabase.from('history').select('seconds, episode_position').eq('user_id', u),
 		supabase.from('ratings').select('vote').eq('user_id', u)
 	]);
 	const totalSec = (hist.data || []).reduce((s, r) => s + (r.seconds || 0), 0);
@@ -280,7 +297,8 @@ export async function watchStats() {
 	const avg = votes.length ? votes.reduce((a, b) => a + b, 0) / votes.length : 0;
 	return {
 		hours: Math.round((totalSec / 3600) * 10) / 10,
-		episodes: (hist.data || []).length,
+		// Серий — сумма позиций, а не число тайтлов: в Anixart счётчик именно такой.
+		episodes: (hist.data || []).reduce((s, r) => s + (Number(r.episode_position) || 1), 0),
 		avgRating: Math.round(avg * 10) / 10
 	};
 }
@@ -384,13 +402,48 @@ export async function uploadAvatar(file) {
 	return data.publicUrl;
 }
 
-/** @param {{ username?: string, avatar_url?: string | null }} [opts] */
-export async function updateProfile({ username, avatar_url } = {}) {
+/** Поля профиля, которые пользователь редактирует сам. */
+const PROFILE_FIELDS = [
+	'username',
+	'avatar_url',
+	'status',
+	'vk_page',
+	'tg_page',
+	'tt_page',
+	'inst_page',
+	'discord_page',
+	'is_stats_hidden',
+	'is_counts_hidden',
+	'is_social_hidden',
+	'is_friend_requests_disallowed'
+];
+
+/**
+ * Обновить профиль. Принимает любое подмножество PROFILE_FIELDS — остальные
+ * ключи молча отбрасываются, чтобы случайный лишний параметр не улетал в БД.
+ * @param {Record<string, any>} [patch]
+ */
+export async function updateProfile(patch = {}) {
 	if (!supabase || !uid()) throw new Error('Нет аккаунта');
 	/** @type {Record<string, any>} */
-	const patch = {};
-	if (username != null) patch.username = username;
-	if (avatar_url !== undefined) patch.avatar_url = avatar_url;
-	const { error } = await supabase.from('profiles').update(patch).eq('id', uid());
+	const clean = {};
+	for (const key of PROFILE_FIELDS) if (patch[key] !== undefined) clean[key] = patch[key];
+	if (!Object.keys(clean).length) return;
+	const { error } = await supabase.from('profiles').update(clean).eq('id', uid());
 	if (error) throw error;
+}
+
+/**
+ * Отметка «был(а) в сети». Пишется не чаще раза в пять минут: страницы
+ * дёргают её при каждом заходе, а точность до минуты профилю не нужна.
+ */
+let presenceAt = 0;
+export async function touchPresence() {
+	if (!supabase || !uid()) return;
+	if (Date.now() - presenceAt < 5 * 60 * 1000) return;
+	presenceAt = Date.now();
+	await supabase
+		.from('profiles')
+		.update({ last_active_at: new Date().toISOString() })
+		.eq('id', uid());
 }

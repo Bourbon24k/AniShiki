@@ -31,7 +31,8 @@
 	import { uploadAvatar } from '$lib/anixart';
 	import { clearCatalogCache } from '$lib/catalog';
 	import { supabaseEnabled } from '$lib/supabase';
-	import { siteSession, siteProfile, siteSignOut, currentSiteName } from '$lib/stores/auth';
+	import { siteSession, siteProfile, siteSignOut, currentSiteName, refreshProfile } from '$lib/stores/auth';
+	import { updateProfile, uploadAvatar as uploadSiteAvatar } from '$lib/sitedata';
 	import {
 		standalone,
 		notificationPermission,
@@ -294,6 +295,86 @@
 		}
 	}
 
+	/* ── аккаунт сайта: те же настройки, что и у Anixart ── */
+
+	let siteLoginDraft = '';
+	let siteStatusDraft = '';
+	let siteSocialDraft = { vk_page: '', tg_page: '', tt_page: '', inst_page: '', discord_page: '' };
+	let siteAvatarInput;
+	let siteAvatarBusy = false;
+	let siteSaving = false;
+
+	// Приватность аккаунта сайта — булева: показывать блок или нет. Значения
+	// Anixart (все / друзья / никто) хранить негде: у сайта нет «только друзьям»
+	// на уровне политик БД, а обещать в интерфейсе то, чего не делает сервер,
+	// хуже, чем честный переключатель.
+	const sitePrivacyKeys = [
+		{ field: 'is_stats_hidden', label: 'Скрыть статистику, оценки и историю' },
+		{ field: 'is_counts_hidden', label: 'Скрыть комментарии, коллекции и друзей' },
+		{ field: 'is_social_hidden', label: 'Скрыть социальные сети' },
+		{ field: 'is_friend_requests_disallowed', label: 'Запретить заявки в друзья' }
+	];
+
+	function openSiteSheet(name) {
+		const p = $siteProfile || {};
+		if (name === 'site-login') siteLoginDraft = p.username || '';
+		if (name === 'site-status') siteStatusDraft = p.status || '';
+		if (name === 'site-social') {
+			siteSocialDraft = {
+				vk_page: p.vk_page || '',
+				tg_page: p.tg_page || '',
+				tt_page: p.tt_page || '',
+				inst_page: p.inst_page || '',
+				discord_page: p.discord_page || ''
+			};
+		}
+		sheet = name;
+	}
+
+	async function saveSiteProfile(patch, message) {
+		siteSaving = true;
+		try {
+			await updateProfile(patch);
+			await refreshProfile();
+			showToast(message, 'success');
+			sheet = null;
+		} catch (e) {
+			console.error('site profile', e);
+			// 23505 — ник занят: у username в БД уникальный индекс.
+			showToast(e?.code === '23505' ? 'Такой никнейм уже занят' : 'Не удалось сохранить', 'error');
+		}
+		siteSaving = false;
+	}
+
+	async function onSiteAvatarPicked(event) {
+		const file = event.target.files?.[0];
+		event.target.value = '';
+		if (!file) return;
+		if (file.size > 5 * 1024 * 1024) return showToast('Файл больше 5 МБ', 'error');
+		siteAvatarBusy = true;
+		try {
+			const url = await uploadSiteAvatar(file);
+			await updateProfile({ avatar_url: url });
+			await refreshProfile();
+			showToast('Аватар обновлён', 'success');
+		} catch (e) {
+			console.error('site avatar', e);
+			showToast('Не удалось загрузить аватар', 'error');
+		}
+		siteAvatarBusy = false;
+	}
+
+	async function toggleSitePrivacy(item) {
+		const previous = Boolean($siteProfile?.[item.field]);
+		try {
+			await updateProfile({ [item.field]: !previous });
+			await refreshProfile();
+		} catch (e) {
+			console.error('site privacy', e);
+			showToast('Не удалось сохранить', 'error');
+		}
+	}
+
 	async function siteLogout() {
 		await siteSignOut();
 		showToast('Вы вышли из аккаунта AniShiki', 'info');
@@ -399,12 +480,41 @@
 						</div>
 					</div>
 					<div class="rows">
-						<a class="row" href="/me">
+						<a class="row" href={`/u/${$siteSession.user.id}`}>
 							<Icon name="settings" size={18} />
 							<span>Профиль и статистика</span>
 							<Icon name="chevronRight" size={17} />
 						</a>
+						<button class="row" on:click={() => siteAvatarInput.click()} disabled={siteAvatarBusy}>
+							<Icon name="user" size={18} />
+							<span>Аватар</span>
+							<span class="value">{siteAvatarBusy ? 'Загрузка…' : 'Заменить'}</span>
+							<Icon name="chevronRight" size={17} />
+						</button>
+						<button class="row" on:click={() => openSiteSheet('site-login')}>
+							<Icon name="feed" size={18} />
+							<span>Никнейм</span>
+							<span class="value">{$siteProfile?.username || '—'}</span>
+							<Icon name="chevronRight" size={17} />
+						</button>
+						<button class="row" on:click={() => openSiteSheet('site-status')}>
+							<Icon name="star" size={18} />
+							<span>Статус</span>
+							<span class="value">{$siteProfile?.status ? 'Изменить' : 'Не задан'}</span>
+							<Icon name="chevronRight" size={17} />
+						</button>
+						<button class="row" on:click={() => openSiteSheet('site-social')}>
+							<Icon name="friends" size={18} />
+							<span>Социальные сети</span>
+							<Icon name="chevronRight" size={17} />
+						</button>
+						<button class="row" on:click={() => openSiteSheet('site-privacy')}>
+							<Icon name="bookmark" size={18} />
+							<span>Приватность</span>
+							<Icon name="chevronRight" size={17} />
+						</button>
 					</div>
+					<input type="file" accept="image/*" bind:this={siteAvatarInput} on:change={onSiteAvatarPicked} hidden />
 					<button class="logout" on:click={siteLogout}>Выйти из аккаунта AniShiki</button>
 				{:else}
 					<a class="login-cta" href="/register">Создать аккаунт AniShiki</a>
@@ -648,6 +758,78 @@
 			</div>
 		</div>
 	{/if}
+</Sheet>
+
+<Sheet open={sheet === 'site-login'} title="Никнейм" on:close={() => (sheet = null)}>
+	<label class="f">
+		<span>Имя пользователя</span>
+		<input bind:value={siteLoginDraft} maxlength="32" placeholder="Никнейм" />
+	</label>
+	<svelte:fragment slot="footer">
+		<button
+			class="btn primary wide"
+			on:click={() => saveSiteProfile({ username: siteLoginDraft.trim() }, 'Никнейм изменён')}
+			disabled={siteSaving || !siteLoginDraft.trim()}
+		>{siteSaving ? 'Сохранение…' : 'Сохранить'}</button>
+	</svelte:fragment>
+</Sheet>
+
+<Sheet open={sheet === 'site-status'} title="Статус" on:close={() => (sheet = null)}>
+	<label class="f">
+		<span>О себе</span>
+		<textarea bind:value={siteStatusDraft} rows="4" maxlength="255" placeholder="Пара слов о себе"></textarea>
+	</label>
+	<p class="hint">{siteStatusDraft.length}/255</p>
+	<svelte:fragment slot="footer">
+		<button
+			class="btn primary wide"
+			on:click={() => saveSiteProfile({ status: siteStatusDraft.trim() || null }, 'Статус обновлён')}
+			disabled={siteSaving}
+		>{siteSaving ? 'Сохранение…' : 'Сохранить'}</button>
+	</svelte:fragment>
+</Sheet>
+
+<Sheet open={sheet === 'site-social'} title="Социальные сети" on:close={() => (sheet = null)}>
+	<label class="f"><span>VK</span><input bind:value={siteSocialDraft.vk_page} placeholder="username" /></label>
+	<label class="f"><span>Telegram</span><input bind:value={siteSocialDraft.tg_page} placeholder="username" /></label>
+	<label class="f"><span>TikTok</span><input bind:value={siteSocialDraft.tt_page} placeholder="username" /></label>
+	<label class="f"><span>Instagram</span><input bind:value={siteSocialDraft.inst_page} placeholder="username" /></label>
+	<label class="f"><span>Discord</span><input bind:value={siteSocialDraft.discord_page} placeholder="username" /></label>
+	<p class="hint">Достаточно имени пользователя — ссылку соберём сами.</p>
+	<svelte:fragment slot="footer">
+		<button
+			class="btn primary wide"
+			on:click={() =>
+				saveSiteProfile(
+					{
+						vk_page: cleanHandle(siteSocialDraft.vk_page) || null,
+						tg_page: cleanHandle(siteSocialDraft.tg_page) || null,
+						tt_page: cleanHandle(siteSocialDraft.tt_page) || null,
+						inst_page: cleanHandle(siteSocialDraft.inst_page) || null,
+						discord_page: cleanHandle(siteSocialDraft.discord_page) || null
+					},
+					'Соцсети сохранены'
+				)}
+			disabled={siteSaving}
+		>{siteSaving ? 'Сохранение…' : 'Сохранить'}</button>
+	</svelte:fragment>
+</Sheet>
+
+<Sheet open={sheet === 'site-privacy'} title="Приватность" on:close={() => (sheet = null)}>
+	{#each sitePrivacyKeys as item}
+		<div class="field row bordered">
+			<span class="label">{item.label}</span>
+			<button
+				class="toggle"
+				class:on={$siteProfile?.[item.field]}
+				on:click={() => toggleSitePrivacy(item)}
+				aria-label="Переключить"
+			>
+				<span class="knob"></span>
+			</button>
+		</div>
+	{/each}
+	<p class="hint">Скрытое не просто прячется в интерфейсе — политики базы не отдают его чужому запросу.</p>
 </Sheet>
 
 <Sheet open={sheet === 'notifications'} title="Уведомления Anixart" on:close={() => (sheet = null)}>

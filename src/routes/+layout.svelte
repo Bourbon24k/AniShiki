@@ -15,6 +15,7 @@
 	import { initPwa, setAppBadge } from '$lib/pwa';
 	import { initShell, swipeBack, rememberScroll, recallScroll, standalone } from '$lib/ios';
 	import { authReady, siteSession } from '$lib/stores/auth';
+	import { touchPresence } from '$lib/sitedata';
 	import { unreadCount, syncEpisodeNotifications } from '$lib/notifications';
 
 	let isMobile = false;
@@ -65,6 +66,9 @@
 
 	let badgeFor = undefined;
 	$: if ($authReady && !$userToken) refreshBadge($siteSession?.user?.id ?? null);
+	// Отметка «был(а) в сети» для профиля сайта: сама себя придерживает, чтобы
+	// не писать в базу на каждый переход между страницами.
+	$: if ($siteSession) touchPresence().catch(() => {});
 
 	async function refreshBadge(userId) {
 		if (userId === badgeFor) return;
