@@ -92,6 +92,14 @@ export async function respondRequest(requesterId, accept) {
 			.update({ status: 'accepted' })
 			.eq('requester', requesterId)
 			.eq('addressee', uid());
+		// Своя встречная заявка, если она была, иначе навсегда останется
+		// висеть в исходящих.
+		await supabase
+			.from('friendships')
+			.delete()
+			.eq('requester', uid())
+			.eq('addressee', requesterId)
+			.eq('status', 'pending');
 		notify(requesterId, {
 			type: 'friend_accepted',
 			title: `${currentSiteName() || 'Пользователь'} принял вашу заявку в друзья`,
@@ -119,14 +127,20 @@ export async function removeFriend(userId) {
  */
 export async function friendStatusWith(userId) {
 	if (!supabase || !uid() || !userId || userId === uid()) return 'none';
+	// Именно список, а не maybeSingle: строк может оказаться две — встречные
+	// заявки в обе стороны ключом не запрещены. maybeSingle в этом случае
+	// отдавал ошибку, статус получался 'none', и подружиться из профиля было
+	// невозможно.
 	const { data } = await supabase
 		.from('friendships')
 		.select('requester, addressee, status')
 		.or(
 			`and(requester.eq.${uid()},addressee.eq.${userId}),and(requester.eq.${userId},addressee.eq.${uid()})`
-		)
-		.maybeSingle();
-	if (!data) return 'none';
-	if (data.status === 'accepted') return 'friends';
-	return data.requester === uid() ? 'outgoing' : 'incoming';
+		);
+	const rows = data || [];
+	if (!rows.length) return 'none';
+	if (rows.some((r) => r.status === 'accepted')) return 'friends';
+	// При встречных заявках показываем входящую: её можно принять одним нажатием.
+	if (rows.some((r) => r.addressee === uid())) return 'incoming';
+	return 'outgoing';
 }

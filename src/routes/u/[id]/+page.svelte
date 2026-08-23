@@ -9,7 +9,7 @@
 	import { goto } from '$app/navigation';
 	import { getSiteProfile } from '$lib/siteprofile';
 	import { friendStatusWith, sendRequest, respondRequest, removeFriend } from '$lib/friends';
-	import { siteSession, siteSignOut } from '$lib/stores/auth';
+	import { siteSession, siteSignOut, authReady } from '$lib/stores/auth';
 	import { showToast } from '$lib/stores';
 	import { haptic } from '$lib/ios';
 	import { formatWatchTime } from '$lib/utils';
@@ -45,7 +45,7 @@
 		: [];
 
 	/** Свои списки живут на общих страницах, чужие — в разделах профиля. */
-	$: listHref = (type) => (profile?.isMine ? `/bookmarks?type=${type}` : `/u/${id}/bookmarks?type=${type}`);
+	$: listHref = (type) => `/u/${id}/bookmarks?type=${type}`;
 
 	$: view = profile && {
 		name: profile.username,
@@ -74,16 +74,18 @@
 		dailyWatch: profile.dailyWatch,
 		links: [
 			{
-				href: profile.isMine ? '/bookmarks' : `/u/${id}/bookmarks`,
+				// Именно раздел профиля, а не общая /bookmarks: та показывает списки
+				// Anixart, если пользователь вошёл ещё и туда.
+				href: `/u/${id}/bookmarks`,
 				label: 'Закладки',
 				icon: 'bookmark',
 				// Закладки — это все пять списков вместе с избранным, а не один из них.
 				count: Object.values(profile.counts).reduce((a, b) => a + b, 0) + profile.favoriteCount
 			},
 			{ href: `/u/${id}/collections`, label: 'Коллекции', icon: 'collection', count: profile.countsHidden ? null : profile.collectionCount },
-			{ href: profile.isMine ? '/history' : `/u/${id}/history`, label: 'История', icon: 'history', count: profile.historyCount || null },
+			{ href: `/u/${id}/history`, label: 'История', icon: 'history', count: profile.historyCount || null },
 			{ href: `/u/${id}/votes`, label: 'Оценки', icon: 'star', count: profile.ratedCount || null },
-			{ href: '/friends', label: 'Друзья', icon: 'friends', count: profile.countsHidden ? null : profile.friendCount }
+			{ href: profile.isMine ? '/friends' : `/u/${id}/friends`, label: 'Друзья', icon: 'friends', count: profile.countsHidden ? null : profile.friendCount }
 		],
 		votes: profile.rated.map((r) => ({
 			id: r.id,
@@ -97,9 +99,9 @@
 			dateMs: r.ratedAt ? Date.parse(r.ratedAt) : null
 		})),
 		history: profile.history,
-		bookmarksHref: profile.isMine ? '/bookmarks' : `/u/${id}/bookmarks`,
+		bookmarksHref: `/u/${id}/bookmarks`,
 		votesHref: `/u/${id}/votes`,
-		historyHref: profile.isMine ? '/history' : `/u/${id}/history`
+		historyHref: `/u/${id}/history`
 	};
 
 	async function load(userId) {
@@ -112,6 +114,8 @@
 			}),
 			friendStatusWith(userId).catch(() => 'none')
 		]);
+		// Пока запрос летел, могли уйти на другой профиль — тогда ответ уже чужой.
+		if (userId !== id) return;
 		profile = p;
 		friendStatus = fs;
 		notFound = !p;
@@ -143,9 +147,12 @@
 				friendStatus = 'friends';
 				showToast('Теперь вы друзья', 'success');
 			} else {
+				// Текст выбираем до сброса статуса: иначе при удалении друга
+				// показывалось «Заявка отменена».
+				const wasFriend = friendStatus === 'friends';
 				await removeFriend(id);
 				friendStatus = 'none';
-				showToast(friendStatus === 'friends' ? 'Удалено из друзей' : 'Заявка отменена', 'info');
+				showToast(wasFriend ? 'Удалено из друзей' : 'Заявка отменена', 'info');
 			}
 			haptic('medium');
 		} catch (e) {
@@ -161,8 +168,12 @@
 		goto('/');
 	}
 
+	// Ждём восстановления сессии. Без этого при заходе по прямой ссылке на
+	// собственный профиль запросы уходили без токена: свой профиль выглядел
+	// чужим — с кнопкой «Добавить в друзья» на самого себя, без настроек, а
+	// при включённой приватности ещё и без собственной статистики.
 	let loadedFor;
-	$: if (id && id !== loadedFor) {
+	$: if ($authReady && id && id !== loadedFor) {
 		loadedFor = id;
 		load(id);
 	}

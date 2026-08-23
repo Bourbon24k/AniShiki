@@ -30,7 +30,7 @@
 	} from '$lib/utils';
 	import { uploadAvatar } from '$lib/anixart';
 	import { clearCatalogCache } from '$lib/catalog';
-	import { supabaseEnabled } from '$lib/supabase';
+	import { supabase, supabaseEnabled } from '$lib/supabase';
 	import { siteSession, siteProfile, siteSignOut, currentSiteName, refreshProfile } from '$lib/stores/auth';
 	import { updateProfile, uploadAvatar as uploadSiteAvatar } from '$lib/sitedata';
 	import {
@@ -310,7 +310,7 @@
 	// хуже, чем честный переключатель.
 	const sitePrivacyKeys = [
 		{ field: 'is_stats_hidden', label: 'Скрыть статистику, оценки и историю' },
-		{ field: 'is_counts_hidden', label: 'Скрыть комментарии, коллекции и друзей' },
+		{ field: 'is_counts_hidden', label: 'Скрыть счётчики коллекций и друзей' },
 		{ field: 'is_social_hidden', label: 'Скрыть социальные сети' },
 		{ field: 'is_friend_requests_disallowed', label: 'Запретить заявки в друзья' }
 	];
@@ -362,6 +362,42 @@
 			showToast('Не удалось загрузить аватар', 'error');
 		}
 		siteAvatarBusy = false;
+	}
+
+	let passwordDraft = '';
+	let emailDraft = '';
+
+	/** Смена пароля и почты идут через сам Supabase Auth, не через profiles. */
+	async function saveSitePassword() {
+		if (passwordDraft.length < 6) return showToast('Пароль короче шести символов', 'error');
+		siteSaving = true;
+		try {
+			const { error } = await supabase.auth.updateUser({ password: passwordDraft });
+			if (error) throw error;
+			passwordDraft = '';
+			showToast('Пароль изменён', 'success');
+			sheet = null;
+		} catch (e) {
+			console.error('site password', e);
+			showToast('Не удалось сменить пароль', 'error');
+		}
+		siteSaving = false;
+	}
+
+	async function saveSiteEmail() {
+		const value = emailDraft.trim();
+		if (!value) return showToast('Укажите адрес', 'error');
+		siteSaving = true;
+		try {
+			const { error } = await supabase.auth.updateUser({ email: value });
+			if (error) throw error;
+			showToast('Проверьте почту — нужно подтвердить адрес', 'info');
+			sheet = null;
+		} catch (e) {
+			console.error('site email', e);
+			showToast('Не удалось сменить адрес', 'error');
+		}
+		siteSaving = false;
 	}
 
 	async function toggleSitePrivacy(item) {
@@ -511,6 +547,18 @@
 						<button class="row" on:click={() => openSiteSheet('site-privacy')}>
 							<Icon name="bookmark" size={18} />
 							<span>Приватность</span>
+							<Icon name="chevronRight" size={17} />
+						</button>
+						<button class="row" on:click={() => { emailDraft = $siteSession.user?.email || ''; sheet = 'site-email'; }}>
+							<Icon name="notification" size={18} />
+							<span>Почта</span>
+							<span class="value">{$siteSession.user?.email}</span>
+							<Icon name="chevronRight" size={17} />
+						</button>
+						<button class="row" on:click={() => { passwordDraft = ''; sheet = 'site-password'; }}>
+							<Icon name="settings" size={18} />
+							<span>Пароль</span>
+							<span class="value">Сменить</span>
 							<Icon name="chevronRight" size={17} />
 						</button>
 					</div>
@@ -812,6 +860,25 @@
 				)}
 			disabled={siteSaving}
 		>{siteSaving ? 'Сохранение…' : 'Сохранить'}</button>
+	</svelte:fragment>
+</Sheet>
+
+<Sheet open={sheet === 'site-email'} title="Почта" on:close={() => (sheet = null)}>
+	<label class="f"><span>Адрес</span><input type="email" bind:value={emailDraft} placeholder="you@example.com" /></label>
+	<p class="hint">На новый адрес придёт письмо — пока вы не подтвердите его, вход остаётся по старому.</p>
+	<svelte:fragment slot="footer">
+		<button class="btn primary wide" on:click={saveSiteEmail} disabled={siteSaving}>
+			{siteSaving ? 'Сохранение…' : 'Сохранить'}
+		</button>
+	</svelte:fragment>
+</Sheet>
+
+<Sheet open={sheet === 'site-password'} title="Пароль" on:close={() => (sheet = null)}>
+	<label class="f"><span>Новый пароль</span><input type="password" bind:value={passwordDraft} placeholder="Минимум 6 символов" /></label>
+	<svelte:fragment slot="footer">
+		<button class="btn primary wide" on:click={saveSitePassword} disabled={siteSaving}>
+			{siteSaving ? 'Сохранение…' : 'Сохранить'}
+		</button>
 	</svelte:fragment>
 </Sheet>
 

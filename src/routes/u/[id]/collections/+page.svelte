@@ -1,6 +1,7 @@
 <script>
 	/** Публичные коллекции пользователя сайта. */
 	import { page } from '$app/stores';
+	import { authReady } from '$lib/stores/auth';
 	import { listCollectionsByUser } from '$lib/collections';
 	import CollectionCard from '$lib/components/CollectionCard.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
@@ -13,12 +14,15 @@
 
 	async function load(userId) {
 		loading = true;
-		items = await listCollectionsByUser(userId).catch(() => []);
+		const loaded = await listCollectionsByUser(userId).catch(() => []);
+		if (userId !== id) return;
+		items = loaded;
 		loading = false;
 	}
 
+	// Ждём восстановления сессии: без токена свои закрытые данные не придут.
 	let loadedFor;
-	$: if (id && id !== loadedFor) {
+	$: if ($authReady && id && id !== loadedFor) {
 		loadedFor = id;
 		load(id);
 	}

@@ -464,9 +464,6 @@
 		font-size: 19px;
 		font-weight: 700;
 	}
-	.card-head.plain {
-		margin-bottom: 14px;
-	}
 	.more {
 		display: inline-flex;
 		align-items: center;

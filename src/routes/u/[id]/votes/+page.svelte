@@ -1,6 +1,7 @@
 <script>
 	/** Оценки пользователя сайта. Своя оценка видна прямо на карточке. */
 	import { page } from '$app/stores';
+	import { authReady } from '$lib/stores/auth';
 	import { getSiteProfile } from '$lib/siteprofile';
 	import GridList from '$lib/components/GridList.svelte';
 	import ProfileSubPage from '$lib/components/ProfileSubPage.svelte';
@@ -15,12 +16,15 @@
 
 	async function load(userId) {
 		loading = true;
-		profile = await getSiteProfile(userId).catch(() => null);
+		const loaded = await getSiteProfile(userId).catch(() => null);
+		if (userId !== id) return;
+		profile = loaded;
 		loading = false;
 	}
 
+	// Ждём восстановления сессии: без токена свои закрытые данные не придут.
 	let loadedFor;
-	$: if (id && id !== loadedFor) {
+	$: if ($authReady && id && id !== loadedFor) {
 		loadedFor = id;
 		load(id);
 	}

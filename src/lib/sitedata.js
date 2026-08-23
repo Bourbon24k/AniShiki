@@ -22,7 +22,10 @@ function toCard(row) {
 function genresOf(release) {
 	const raw = release?.genres;
 	if (!raw) return null;
-	if (Array.isArray(raw)) return raw.map((g) => g?.name || g).filter(Boolean).join(', ') || null;
+	if (Array.isArray(raw)) {
+		return raw.map((g) => (typeof g === 'string' ? g : g?.name)).filter(Boolean).join(', ') || null;
+	}
+	if (typeof raw === 'object') return raw.name || null;
 	return String(raw) || null;
 }
 
@@ -368,10 +371,21 @@ export async function logActivity(type, release, meta) {
 /** Активность друзей (RLS отдаёт своё + друзей; своё исключаем). */
 export async function friendsActivity() {
 	if (!supabase || !uid()) return [];
+	// Раньше запрос полагался на то, что RLS сама отдаст только своё и друзей.
+	// Это перестало быть правдой: политика профиля открыла чтение активности
+	// любого пользователя с незакрытой статистикой, и в ленту друзей начали
+	// попадать посторонние. Круг задаём явно.
+	const { data: links } = await supabase
+		.from('friendships')
+		.select('requester, addressee')
+		.eq('status', 'accepted')
+		.or(`requester.eq.${uid()},addressee.eq.${uid()}`);
+	const friendIds = (links || []).map((r) => (r.requester === uid() ? r.addressee : r.requester));
+	if (!friendIds.length) return [];
 	const { data } = await supabase
 		.from('activity')
 		.select('*')
-		.neq('user_id', uid())
+		.in('user_id', friendIds)
 		.order('created_at', { ascending: false })
 		.limit(40);
 	const rows = data || [];

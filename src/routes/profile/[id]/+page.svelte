@@ -15,6 +15,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import ProfileView from '$lib/components/ProfileView.svelte';
+	import { isSiteId } from '$lib/siteprofile';
 
 	$: profileId = Number($page.params.id);
 
@@ -37,6 +38,9 @@
 				{ type: 5, label: 'Брошено', value: profile.dropped_count, color: 'var(--dropped-color)' }
 			].map((s) => ({ ...s, href: `/profile/${profileId}/bookmarks?type=${s.type}` }))
 		: [];
+
+	/** Настройка «скрыть счётчики» до сих пор не делала ничего — счётчики рисовались всегда. */
+	$: countsHidden = Boolean(profile?.is_counts_hidden) && !isMine;
 
 	/** «Закладки» — это все списки разом, а не только избранное. */
 	$: bookmarksTotal = lists.reduce((sum, s) => sum + (Number(s.value) || 0), 0);
@@ -93,8 +97,10 @@
 		registeredYear: profile.register_date ? new Date(profile.register_date * 1000).getFullYear() : null,
 		isOnline: profile.is_online,
 		lastActivitySec: profile.last_activity_time,
-		statsHidden: profile.is_stats_hidden,
-		socialHidden: profile.is_social_hidden,
+		// Приватность прячет профиль от посторонних, а не от владельца:
+		// со скрытой статистикой человек переставал видеть собственную.
+		statsHidden: profile.is_stats_hidden && !isMine,
+		socialHidden: profile.is_social_hidden && !isMine,
 		badges,
 		socials,
 		banners,
@@ -108,10 +114,10 @@
 		})),
 		links: [
 			{ href: `/profile/${profileId}/bookmarks`, label: 'Закладки', icon: 'bookmark', count: bookmarksTotal },
-			{ href: `/profile/${profileId}/collections`, label: 'Коллекции', icon: 'collection', count: profile.collection_count },
+			{ href: `/profile/${profileId}/collections`, label: 'Коллекции', icon: 'collection', count: countsHidden ? null : profile.collection_count },
 			{ href: `/profile/${profileId}/history`, label: 'История', icon: 'history', count: null },
 			{ href: `/profile/${profileId}/votes`, label: 'Оценки', icon: 'star', count: votes.length || null },
-			{ href: `/friends/${profileId}`, label: 'Друзья', icon: 'friends', count: profile.friend_count }
+			{ href: `/friends/${profileId}`, label: 'Друзья', icon: 'friends', count: countsHidden ? null : profile.friend_count }
 		],
 		votes: votes.map((v) => ({
 			id: v.id,
@@ -132,10 +138,14 @@
 		history = [];
 		try {
 			const data = await getApi().profile.info(id);
+			// Ответ мог прийти после перехода на другой профиль — тогда он уже
+			// не наш: иначе чужие оценки и история показывались под новым именем.
+			if (id !== profileId) return;
 			profile = data?.profile;
 			isMine = data?.is_my_profile || Number($userToken?.id) === id;
 		} catch (e) {
 			console.error('profile', e);
+			if (id !== profileId) return;
 			profile = null;
 		}
 		loading = false;
@@ -154,6 +164,7 @@
 		if (!isMine) return;
 		try {
 			const data = await getApi().release.getHistory(0);
+			if (id !== profileId) return;
 			if (data?.content?.length) history = data.content.map(toHistoryCard);
 		} catch (e) {
 			console.error('history', e);
@@ -180,6 +191,7 @@
 		votes = profile?.votes || [];
 		try {
 			const data = await getApi().profile.getVotedReleases(id, 0);
+			if (id !== profileId) return;
 			if (data?.content?.length) votes = data.content;
 		} catch (e) {
 			console.error('votes', e);
@@ -193,13 +205,26 @@
 		friendBusy = true;
 		try {
 			const api = getApi();
+			// Входящая заявка (статус 1) подтверждается повторной отправкой —
+			// у Anixart это SendFriendRequestResult.RequestConfirmed. Раньше
+			// кнопка «Принять заявку» звала removeFriendRequest, то есть
+			// заявку отклоняла, хотя обещала обратное.
+			const incoming = profile.friend_status === 1;
+			const none = profile.friend_status === null || profile.friend_status === undefined;
 			const result =
-				profile.friend_status === null || profile.friend_status === undefined
+				none || incoming
 					? await api.profile.sendFriendRequest(profileId)
 					: await api.profile.removeFriendRequest(profileId);
 			profile = { ...profile, friend_status: result?.friend_status ?? null };
 			haptic('medium');
-			showToast(profile.friend_status != null ? 'Заявка отправлена' : 'Заявка отменена', 'success');
+			showToast(
+				incoming
+					? 'Заявка принята'
+					: profile.friend_status != null
+						? 'Заявка отправлена'
+						: 'Заявка отменена',
+				'success'
+			);
 		} catch (e) {
 			console.error('friend', e);
 			showToast('Не получилось', 'error');
@@ -228,7 +253,10 @@
 		goto('/');
 	}
 
-	$: if (profileId) load(profileId);
+	// Идентификатор аккаунта сайта — uuid, у Anixart он числовой. По такой
+	// ссылке страница раньше отвечала «Профиль не найден».
+	$: if (isSiteId($page.params.id)) goto(`/u/${$page.params.id}`, { replaceState: true });
+	else if (profileId) load(profileId);
 </script>
 
 <svelte:head><title>{profile?.login || 'Профиль'} — AniShiki</title></svelte:head>
