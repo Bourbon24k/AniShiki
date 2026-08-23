@@ -331,6 +331,21 @@
 			min-height: 440px;
 			margin: 0 -12px 24px;
 		}
+		/* На узком экране текст занимает почти всю ширину блока, поэтому
+		   боковой градиент бесполезен — он гасит только левый край, а строки
+		   идут до правого. Затемнение здесь целиком вертикальное и заметно
+		   плотнее: на светлом кадре описание и оригинальное название иначе
+		   просто не читались. */
+		.grad {
+			background: linear-gradient(
+				to top,
+				var(--background-color) 0%,
+				color-mix(in srgb, var(--background-color) 92%, transparent) 24%,
+				color-mix(in srgb, var(--background-color) 70%, transparent) 50%,
+				color-mix(in srgb, var(--background-color) 34%, transparent) 74%,
+				transparent 97%
+			);
+		}
 		.content {
 			padding: 24px 18px 28px;
 		}
@@ -342,8 +357,32 @@
 			-webkit-line-clamp: 2;
 			line-clamp: 2;
 		}
+		/* Жанры в одну строку: четвёртый чип переносился на вторую и растягивал
+		   блок почти на сотню пикселей ради одного слова. */
 		.genres {
 			margin: 12px 0 16px;
+			flex-wrap: nowrap;
+			overflow: hidden;
+		}
+		.genres span {
+			flex: none;
+			white-space: nowrap;
+		}
+		/* Четвёртый чип на 375px не помещается и обрезался посреди слова.
+		   Прячем его целиком, а маска справа страхует от длинных названий. */
+		.genres span:nth-child(n + 4) {
+			display: none;
+		}
+		.genres {
+			-webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+			mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+		}
+		.cta {
+			flex-wrap: nowrap;
+		}
+		.btn {
+			padding: 12px 20px;
+			font-size: 14.5px;
 		}
 		.dots {
 			right: 18px;
