@@ -85,7 +85,10 @@
 							? ` · до ${returnTimeString(profile.ban_expires * 1000, true)}`
 							: '')
 				},
-				profile.is_me_blocked && { text: 'Пользователь ограничил вам доступ к профилю.' }
+				profile.is_me_blocked && { text: 'Пользователь ограничил вам доступ к профилю.' },
+				profile.is_deleted && { danger: true, title: 'Аккаунт удалён', text: 'Профиль больше не поддерживается владельцем.' },
+				profile.is_deletion_requested && { text: 'Владелец запросил удаление аккаунта.' },
+				profile.is_private && { text: 'Профиль закрыт настройками приватности.' }
 			].filter(Boolean)
 		: [];
 
@@ -149,7 +152,10 @@
 			profile = null;
 		}
 		loading = false;
-		if (profile && !profile.is_stats_hidden) {
+		// Тот же признак, что и во view: владельцу приватность профиль не
+		// закрывает, иначе статистика рисовалась, а оценки с историей молча
+		// пропадали — картина получалась рваной.
+		if (profile && !(profile.is_stats_hidden && !isMine)) {
 			loadVotes(id);
 			loadHistory(id);
 		}
@@ -200,36 +206,62 @@
 
 	/* ── друзья ── */
 
-	async function toggleFriend() {
+	/**
+	 * Действие с заявкой в друзья.
+	 *
+	 * Входящая заявка (статус 1) подтверждается повторной отправкой — у Anixart
+	 * это SendFriendRequestResult.RequestConfirmed. Раньше кнопка «Принять
+	 * заявку» звала removeFriendRequest, то есть заявку отклоняла.
+	 *
+	 * Итоговый статус перечитываем из профиля, а не берём из ответа: поле
+	 * friend_status в ответе несёт код результата операции, а не отношение с
+	 * пользователем, и подпись кнопки после действия врала.
+	 *
+	 * @param {'toggle' | 'decline'} action
+	 */
+	async function friendAction(action = 'toggle') {
 		if (!$userToken) return showToast('Войдите в аккаунт Anixart', 'error');
 		friendBusy = true;
+		const was = profile.friend_status;
 		try {
 			const api = getApi();
-			// Входящая заявка (статус 1) подтверждается повторной отправкой —
-			// у Anixart это SendFriendRequestResult.RequestConfirmed. Раньше
-			// кнопка «Принять заявку» звала removeFriendRequest, то есть
-			// заявку отклоняла, хотя обещала обратное.
-			const incoming = profile.friend_status === 1;
-			const none = profile.friend_status === null || profile.friend_status === undefined;
-			const result =
-				none || incoming
-					? await api.profile.sendFriendRequest(profileId)
-					: await api.profile.removeFriendRequest(profileId);
-			profile = { ...profile, friend_status: result?.friend_status ?? null };
-			haptic('medium');
-			showToast(
-				incoming
-					? 'Заявка принята'
-					: profile.friend_status != null
-						? 'Заявка отправлена'
-						: 'Заявка отменена',
-				'success'
-			);
+			const accepting = action === 'toggle' && (was === 1 || was === null || was === undefined);
+			const result = accepting
+				? await api.profile.sendFriendRequest(profileId)
+				: await api.profile.removeFriendRequest(profileId);
+			// code = 0 только при успехе; всё остальное — отказ сервера
+			// (профиль заблокирован, лимит друзей, заявки запрещены).
+			if (result?.code) {
+				showToast(FRIEND_ERRORS[result.code] || 'Не получилось', 'error');
+			} else {
+				haptic('medium');
+				showToast(friendResultText(was, action), 'success');
+			}
+			const fresh = await api.profile.info(profileId);
+			if (profileId !== Number($page.params.id)) return;
+			if (fresh?.profile) profile = fresh.profile;
 		} catch (e) {
 			console.error('friend', e);
 			showToast('Не получилось', 'error');
 		}
 		friendBusy = false;
+	}
+
+	const FRIEND_ERRORS = {
+		4: 'Пользователь вас заблокировал',
+		5: 'Вы заблокировали этого пользователя',
+		6: 'У вас достигнут предел друзей',
+		7: 'У пользователя достигнут предел друзей',
+		8: 'Пользователь запретил заявки в друзья',
+		9: 'Слишком много заявок — попробуйте позже'
+	};
+
+	function friendResultText(previous, action) {
+		if (action === 'decline') return 'Заявка отклонена';
+		if (previous === 1) return 'Заявка принята';
+		if (previous === 2) return 'Удалено из друзей';
+		if (previous === 0) return 'Заявка отменена';
+		return 'Заявка отправлена';
 	}
 
 	function friendLabel(status) {
@@ -257,6 +289,12 @@
 	// ссылке страница раньше отвечала «Профиль не найден».
 	$: if (isSiteId($page.params.id)) goto(`/u/${$page.params.id}`, { replaceState: true });
 	else if (profileId) load(profileId);
+	// Ни uuid, ни число: адрес битый. Без этой ветки страница либо навсегда
+	// оставалась со спиннером, либо показывала предыдущего пользователя.
+	else {
+		profile = null;
+		loading = false;
+	}
 </script>
 
 <svelte:head><title>{profile?.login || 'Профиль'} — AniShiki</title></svelte:head>
@@ -270,10 +308,17 @@
 				<a class="btn ghost" href="/settings"><Icon name="settings" size={18} /> Настройки</a>
 				<button class="btn ghost" on:click={logout}>Выйти</button>
 			{:else if $userToken && !profile.is_friend_requests_disallowed}
-				<button class="btn primary" on:click={toggleFriend} disabled={friendBusy}>
+				<button class="btn primary" on:click={() => friendAction('toggle')} disabled={friendBusy}>
 					<Icon name="friends" size={17} />
 					{friendLabel(profile.friend_status)}
 				</button>
+				{#if profile.friend_status === 1}
+					<!-- Отклонить входящую заявку было нечем: кнопка одна, и она
+					     теперь принимает. -->
+					<button class="btn ghost" on:click={() => friendAction('decline')} disabled={friendBusy}>
+						Отклонить
+					</button>
+				{/if}
 			{/if}
 		</svelte:fragment>
 	</ProfileView>

@@ -100,7 +100,7 @@ export async function getSiteProfile(userId) {
 	const mine = profile.id === uid();
 	const statsHidden = Boolean(profile.is_stats_hidden) && !mine;
 
-	const [lists, ratings, favorites, history, activity, collections, historyTotal, friends] =
+	const [lists, ratings, favorites, history, activity, collections, historyStats, historyTotal, friends] =
 		await Promise.all([
 			supabase
 				.from('lists')
@@ -135,6 +135,12 @@ export async function getSiteProfile(userId) {
 						.gte('created_at', new Date(Date.now() - 31 * 86400000).toISOString())
 						.limit(1000),
 			supabase.from('collections').select('id').eq('user_id', userId),
+		// Отдельная лёгкая выборка на всю историю: строки для показа берутся
+		// страницей, и складывать статистику по ней значило занижать её у всех,
+		// у кого больше двухсот тайтлов.
+		statsHidden
+			? { data: [] }
+			: supabase.from('history').select('watched_seconds, episode_position').eq('user_id', userId),
 			// Историю берём страницей, поэтому её счётчик считаем отдельно — иначе
 			// он молча упирался бы в лимит выборки.
 			statsHidden
@@ -165,13 +171,11 @@ export async function getSiteProfile(userId) {
 	// Берём накопитель watched_seconds, а не seconds: seconds — это позиция в
 	// текущей серии, плеер её перезаписывает, и сумма по релизам давала пару
 	// часов даже тому, кто посмотрел сотни серий.
+	const statRows = historyStats.data || [];
 	const watchedMinutes = Math.round(
-		historyRows.reduce((sum, r) => sum + (Number(r.watched_seconds) || 0), 0) / 60
+		statRows.reduce((sum, r) => sum + (Number(r.watched_seconds) || 0), 0) / 60
 	);
-	const watchedEpisodes = historyRows.reduce(
-		(sum, r) => sum + (Number(r.episode_position) || 1),
-		0
-	);
+	const watchedEpisodes = statRows.reduce((sum, r) => sum + (Number(r.episode_position) || 1), 0);
 
 	return {
 		id: profile.id,
@@ -213,14 +217,13 @@ export async function getSiteProfile(userId) {
 		// Динамика: по одной записи активности на просмотренную серию. Записи
 		// активности появляются только при просмотре через плеер и не раньше
 		// минуты, поэтому при их отсутствии берём историю: там есть дата
-		// последнего просмотра и номер серии. Хуже по точности, но график
-		// перестаёт быть пустым у тех, кто смотрел до появления активности.
+		// последнего просмотра. Считаем по одному просмотру на тайтл, а не по
+		// номеру серии: иначе сериал на сто серий рисовал бы столбик «сто серий»
+		// за одни сутки. Хуже по точности, но график перестаёт быть пустым у
+		// тех, кто смотрел до появления активности.
 		dailyWatch: (activity.data || []).length
 			? (activity.data || []).map((a) => ({ ms: Date.parse(a.created_at), count: 1 }))
-			: historyRows.map((r) => ({
-					ms: Date.parse(r.updated_at),
-					count: Number(r.episode_position) || 1
-				})),
+			: historyRows.map((r) => ({ ms: Date.parse(r.updated_at), count: 1 })),
 		byStatus: (status) => listRows.filter((r) => r.status === status).map(toCard),
 		favorites: favoriteRows.map(toCard),
 		rated: ratingRows.map((r) => ({

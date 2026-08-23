@@ -287,25 +287,6 @@ export async function setRating(release, vote) {
 	logActivity('rate', release, vote);
 }
 
-/** Расширенная статистика просмотра (для профиля). */
-export async function watchStats() {
-	if (!supabase || !uid()) return { hours: 0, episodes: 0, avgRating: 0 };
-	const u = uid();
-	const [hist, rated] = await Promise.all([
-		supabase.from('history').select('seconds, episode_position').eq('user_id', u),
-		supabase.from('ratings').select('vote').eq('user_id', u)
-	]);
-	const totalSec = (hist.data || []).reduce((s, r) => s + (r.seconds || 0), 0);
-	const votes = (rated.data || []).map((r) => r.vote);
-	const avg = votes.length ? votes.reduce((a, b) => a + b, 0) / votes.length : 0;
-	return {
-		hours: Math.round((totalSec / 3600) * 10) / 10,
-		// Серий — сумма позиций, а не число тайтлов: в Anixart счётчик именно такой.
-		episodes: (hist.data || []).reduce((s, r) => s + (Number(r.episode_position) || 1), 0),
-		avgRating: Math.round(avg * 10) / 10
-	};
-}
-
 // ── Комментарии сайта (видны пользователям сайта) ──
 
 export async function listComments(releaseId) {

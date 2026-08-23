@@ -462,7 +462,15 @@
 			} catch {}
 		} else if (!$userToken && $siteSession && release) {
 			// аккаунт сайта → история в Supabase
-			saveHistory(release, { episodePosition: pos, sourceId: selectedSource?.id, dubberId: selectedDubber?.id }).catch(() => {});
+			// seconds сбрасываем явно: без этого в строке оставалась позиция из
+			// предыдущей серии — «продолжить просмотр» предлагал новую серию с
+			// чужой секунды, а накопитель времени считал по устаревшему значению.
+			saveHistory(release, {
+				episodePosition: pos,
+				sourceId: selectedSource?.id,
+				dubberId: selectedDubber?.id,
+				seconds: 0
+			}).catch(() => {});
 		}
 	}
 

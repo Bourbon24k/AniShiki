@@ -365,16 +365,21 @@
 	}
 
 	let passwordDraft = '';
+	let passwordRepeat = '';
 	let emailDraft = '';
 
 	/** Смена пароля и почты идут через сам Supabase Auth, не через profiles. */
 	async function saveSitePassword() {
 		if (passwordDraft.length < 6) return showToast('Пароль короче шести символов', 'error');
+		// Повтор обязателен: без него опечатка молча становится новым паролем,
+		// а вспомнить его будет неоткуда.
+		if (passwordDraft !== passwordRepeat) return showToast('Пароли не совпадают', 'error');
 		siteSaving = true;
 		try {
 			const { error } = await supabase.auth.updateUser({ password: passwordDraft });
 			if (error) throw error;
 			passwordDraft = '';
+			passwordRepeat = '';
 			showToast('Пароль изменён', 'success');
 			sheet = null;
 		} catch (e) {
@@ -555,7 +560,7 @@
 							<span class="value">{$siteSession.user?.email}</span>
 							<Icon name="chevronRight" size={17} />
 						</button>
-						<button class="row" on:click={() => { passwordDraft = ''; sheet = 'site-password'; }}>
+						<button class="row" on:click={() => { passwordDraft = ''; passwordRepeat = ''; sheet = 'site-password'; }}>
 							<Icon name="settings" size={18} />
 							<span>Пароль</span>
 							<span class="value">Сменить</span>
@@ -875,6 +880,7 @@
 
 <Sheet open={sheet === 'site-password'} title="Пароль" on:close={() => (sheet = null)}>
 	<label class="f"><span>Новый пароль</span><input type="password" bind:value={passwordDraft} placeholder="Минимум 6 символов" /></label>
+	<label class="f"><span>Ещё раз</span><input type="password" bind:value={passwordRepeat} placeholder="Повторите пароль" /></label>
 	<svelte:fragment slot="footer">
 		<button class="btn primary wide" on:click={saveSitePassword} disabled={siteSaving}>
 			{siteSaving ? 'Сохранение…' : 'Сохранить'}
@@ -896,7 +902,11 @@
 			</button>
 		</div>
 	{/each}
-	<p class="hint">Скрытое не просто прячется в интерфейсе — политики базы не отдают его чужому запросу.</p>
+	<p class="hint">
+		Статистику, оценки, историю и списки не отдаёт чужому запросу сама база.
+		Соцсети и счётчики скрываются только в интерфейсе: строка профиля читается
+		всеми, и упорный человек их достанет.
+	</p>
 </Sheet>
 
 <Sheet open={sheet === 'notifications'} title="Уведомления Anixart" on:close={() => (sheet = null)}>

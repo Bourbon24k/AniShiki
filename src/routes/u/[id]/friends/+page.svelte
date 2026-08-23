@@ -7,6 +7,7 @@
 	import { page } from '$app/stores';
 	import { supabase } from '$lib/supabase';
 	import { authReady } from '$lib/stores/auth';
+	import { getSiteProfile } from '$lib/siteprofile';
 	import Icon from '$lib/components/Icon.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import ProfileSubPage from '$lib/components/ProfileSubPage.svelte';
@@ -15,9 +16,19 @@
 
 	let items = [];
 	let loading = true;
+	/** Счётчик друзей в профиле уважает приватность — список обязан тоже. */
+	let hidden = false;
 
 	async function load(userId) {
 		loading = true;
+		const owner = await getSiteProfile(userId).catch(() => null);
+		if (userId !== id) return;
+		hidden = Boolean(owner?.countsHidden);
+		if (hidden) {
+			items = [];
+			loading = false;
+			return;
+		}
 		try {
 			const { data } = await supabase
 				.from('friendships')
@@ -50,6 +61,8 @@
 <ProfileSubPage backHref={`/u/${id}`} title="Друзья">
 	{#if loading}
 		<Spinner center />
+	{:else if hidden}
+		<p class="note">Список друзей скрыт настройками приватности пользователя.</p>
 	{:else if !items.length}
 		<p class="note">Друзей пока нет.</p>
 	{:else}

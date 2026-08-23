@@ -82,12 +82,14 @@
 				label: 'Закладки',
 				icon: 'bookmark',
 				// Закладки — это все пять списков вместе с избранным, а не один из них.
-				count: Object.values(profile.counts).reduce((a, b) => a + b, 0) + profile.favoriteCount
+				count: profile.statsHidden
+					? null
+					: Object.values(profile.counts).reduce((a, b) => a + b, 0) + profile.favoriteCount
 			},
 			{ href: `/u/${id}/collections`, label: 'Коллекции', icon: 'collection', count: profile.countsHidden ? null : profile.collectionCount },
 			{ href: `/u/${id}/history`, label: 'История', icon: 'history', count: profile.historyCount || null },
 			{ href: `/u/${id}/votes`, label: 'Оценки', icon: 'star', count: profile.ratedCount || null },
-			{ href: profile.isMine ? '/friends' : `/u/${id}/friends`, label: 'Друзья', icon: 'friends', count: profile.countsHidden ? null : profile.friendCount }
+			{ href: `/u/${id}/friends`, label: 'Друзья', icon: 'friends', count: profile.countsHidden ? null : profile.friendCount }
 		],
 		votes: profile.rated.map((r) => ({
 			id: r.id,
@@ -164,6 +166,20 @@
 		friendBusy = false;
 	}
 
+	/** Отклонить входящую заявку: принять её кнопка умела, отказать — нет. */
+	async function declineFriend() {
+		friendBusy = true;
+		try {
+			await respondRequest(id, false);
+			friendStatus = 'none';
+			showToast('Заявка отклонена', 'info');
+		} catch (e) {
+			console.error('friend', e);
+			showToast('Не получилось', 'error');
+		}
+		friendBusy = false;
+	}
+
 	async function logout() {
 		await siteSignOut();
 		showToast('Вы вышли из аккаунта', 'info');
@@ -196,6 +212,9 @@
 					<Icon name="friends" size={17} />
 					{friendLabel(friendStatus)}
 				</button>
+				{#if friendStatus === 'incoming'}
+					<button class="btn ghost" on:click={declineFriend} disabled={friendBusy}>Отклонить</button>
+				{/if}
 			{/if}
 		</svelte:fragment>
 	</ProfileView>
