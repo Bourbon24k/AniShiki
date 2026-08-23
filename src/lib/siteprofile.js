@@ -210,11 +210,17 @@ export async function getSiteProfile(userId) {
 			{ rows: listRows, weight: 1 },
 			{ rows: ratingRows.filter((r) => r.vote < 8), weight: 1 }
 		]),
-		// Динамика: по одной записи активности на просмотренную серию.
-		dailyWatch: (activity.data || []).map((a) => ({
-			ms: Date.parse(a.created_at),
-			count: 1
-		})),
+		// Динамика: по одной записи активности на просмотренную серию. Записи
+		// активности появляются только при просмотре через плеер и не раньше
+		// минуты, поэтому при их отсутствии берём историю: там есть дата
+		// последнего просмотра и номер серии. Хуже по точности, но график
+		// перестаёт быть пустым у тех, кто смотрел до появления активности.
+		dailyWatch: (activity.data || []).length
+			? (activity.data || []).map((a) => ({ ms: Date.parse(a.created_at), count: 1 }))
+			: historyRows.map((r) => ({
+					ms: Date.parse(r.updated_at),
+					count: Number(r.episode_position) || 1
+				})),
 		byStatus: (status) => listRows.filter((r) => r.status === status).map(toCard),
 		favorites: favoriteRows.map(toCard),
 		rated: ratingRows.map((r) => ({

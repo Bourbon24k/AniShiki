@@ -69,7 +69,9 @@
 		].map((s) => ({ ...s, href: listHref(s.type) })),
 		preferred: profile.preferred,
 		watchedEpisodes: profile.watchedEpisodes,
-		watchTime: profile.watchedMinutes ? formatWatchTime(profile.watchedMinutes) : null,
+		// Строку показываем всегда, как у Anixart: пропадая при нуле, она
+		// оставляла в статистике дыру там, где у второго аккаунта строка есть.
+		watchTime: formatWatchTime(profile.watchedMinutes || 0),
 		avgRating: profile.avgRating,
 		dailyWatch: profile.dailyWatch,
 		links: [
