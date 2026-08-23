@@ -82,13 +82,12 @@
 		display: flex;
 		align-items: flex-end;
 		min-height: clamp(380px, 56vh, 560px);
-		/* Без скругления: края и углы растворяются маской и расфокусом,
-		   поэтому рамка блоку не нужна. overflow остаётся — им обрезается
-		   увеличенная картинка неактивного слайда. */
+		/* overflow нужен и для скругления, и чтобы обрезать увеличенную
+		   картинку неактивного слайда. */
 		overflow: hidden;
 		margin-bottom: 34px;
 		isolation: isolate;
-		--fade: 96px;
+		--fade: 64px;
 		--fade-bottom: 150px;
 	}
 	.bg {
@@ -283,6 +282,9 @@
 	/* В широком окне гасим и боковые края: карточка перестаёт быть резким
 	   прямоугольником и мягко уходит в страницу со всех сторон. */
 	@media (min-width: 769px) {
+		.hero {
+			border-radius: 26px;
+		}
 		.bg {
 			/* Затухание полосой фиксированной ширины вдоль каждого края, а не
 			   радиальным градиентом. У радиального шкала привязана к углу, и на
@@ -291,11 +293,11 @@
 			   углы не выглядели. Две маски пересекаются: по горизонтали и по
 			   вертикали. В углу гаснут обе сразу — там спад самый мягкий. */
 			-webkit-mask-image:
-				linear-gradient(to right, transparent 0, #000 var(--fade), #000 calc(100% - var(--fade)), transparent 100%),
-				linear-gradient(to bottom, transparent 0, #000 var(--fade), #000 calc(100% - var(--fade-bottom)), transparent 100%);
+				linear-gradient(to right, rgba(0, 0, 0, 0.5) 0, #000 var(--fade), #000 calc(100% - var(--fade)), rgba(0, 0, 0, 0.5) 100%),
+				linear-gradient(to bottom, rgba(0, 0, 0, 0.5) 0, #000 var(--fade), #000 calc(100% - var(--fade-bottom)), transparent 100%);
 			mask-image:
-				linear-gradient(to right, transparent 0, #000 var(--fade), #000 calc(100% - var(--fade)), transparent 100%),
-				linear-gradient(to bottom, transparent 0, #000 var(--fade), #000 calc(100% - var(--fade-bottom)), transparent 100%);
+				linear-gradient(to right, rgba(0, 0, 0, 0.5) 0, #000 var(--fade), #000 calc(100% - var(--fade)), rgba(0, 0, 0, 0.5) 100%),
+				linear-gradient(to bottom, rgba(0, 0, 0, 0.5) 0, #000 var(--fade), #000 calc(100% - var(--fade-bottom)), transparent 100%);
 			-webkit-mask-composite: source-in;
 			mask-composite: intersect;
 		}
