@@ -88,6 +88,8 @@
 		overflow: hidden;
 		margin-bottom: 34px;
 		isolation: isolate;
+		--fade: 96px;
+		--fade-bottom: 150px;
 	}
 	.bg {
 		position: absolute;
@@ -282,34 +284,43 @@
 	   прямоугольником и мягко уходит в страницу со всех сторон. */
 	@media (min-width: 769px) {
 		.bg {
-			/* Именно farthest-corner: эллипс проходит ровно через угол блока,
-			   поэтому 100% шкалы — это угол, а не точка далеко за его
-			   пределами. С заданным вручную размером затухание начиналось
-			   снаружи, и углы оставались абсолютно резкими. */
-			-webkit-mask-image: radial-gradient(
-				farthest-corner at 50% 46%,
-				#000 44%,
-				rgba(0, 0, 0, 0.45) 76%,
-				transparent 99%
-			);
-			mask-image: radial-gradient(
-				farthest-corner at 50% 46%,
-				#000 44%,
-				rgba(0, 0, 0, 0.45) 76%,
-				transparent 99%
-			);
+			/* Затухание полосой фиксированной ширины вдоль каждого края, а не
+			   радиальным градиентом. У радиального шкала привязана к углу, и на
+			   середину верхней кромки приходилось лишь 60% шкалы — там альфа была
+			   ещё 0.75, поэтому сверху читалась ровная резкая линия, а «размытыми»
+			   углы не выглядели. Две маски пересекаются: по горизонтали и по
+			   вертикали. В углу гаснут обе сразу — там спад самый мягкий. */
+			-webkit-mask-image:
+				linear-gradient(to right, transparent 0, #000 var(--fade), #000 calc(100% - var(--fade)), transparent 100%),
+				linear-gradient(to bottom, transparent 0, #000 var(--fade), #000 calc(100% - var(--fade-bottom)), transparent 100%);
+			mask-image:
+				linear-gradient(to right, transparent 0, #000 var(--fade), #000 calc(100% - var(--fade)), transparent 100%),
+				linear-gradient(to bottom, transparent 0, #000 var(--fade), #000 calc(100% - var(--fade-bottom)), transparent 100%);
+			-webkit-mask-composite: source-in;
+			mask-composite: intersect;
 		}
 		.edge-blur {
 			position: absolute;
 			inset: 0;
 			z-index: -1;
 			pointer-events: none;
-			backdrop-filter: blur(16px);
-			-webkit-backdrop-filter: blur(16px);
-			/* Прозрачен в середине — там картинка остаётся чёткой — и набирает
-			   плотность к краям, где и происходит расфокус. */
-			-webkit-mask-image: radial-gradient(farthest-corner at 50% 46%, transparent 34%, #000 88%);
-			mask-image: radial-gradient(farthest-corner at 50% 46%, transparent 34%, #000 88%);
+			backdrop-filter: blur(22px);
+			-webkit-backdrop-filter: blur(22px);
+			/* Обратная маска к картинке: объединение четырёх полос, по одной на
+			   край. Непрозрачна ровно там, где картинка гаснет, — расфокус ложится
+			   на кромку и полностью отсутствует в середине. */
+			-webkit-mask-image:
+				linear-gradient(to right, #000 0, transparent var(--fade)),
+				linear-gradient(to left, #000 0, transparent var(--fade)),
+				linear-gradient(to bottom, #000 0, transparent var(--fade)),
+				linear-gradient(to top, #000 0, transparent var(--fade-bottom));
+			mask-image:
+				linear-gradient(to right, #000 0, transparent var(--fade)),
+				linear-gradient(to left, #000 0, transparent var(--fade)),
+				linear-gradient(to bottom, #000 0, transparent var(--fade)),
+				linear-gradient(to top, #000 0, transparent var(--fade-bottom));
+			-webkit-mask-composite: source-over;
+			mask-composite: add;
 		}
 	}
 
