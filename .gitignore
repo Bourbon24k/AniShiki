@@ -9,3 +9,7 @@ node_modules
 .vercel
 .output
 vite.config.js.timestamp-*
+
+# Рабочие скриншоты для сверки вёрстки
+design-qa-comparison.png
+implementation-home.png
