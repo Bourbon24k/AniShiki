@@ -13,7 +13,38 @@ async function loadProfile(userId) {
 		return;
 	}
 	const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-	siteProfile.set(data || null);
+	if (data) {
+		siteProfile.set(data);
+		return;
+	}
+	// Строки профиля может не оказаться: так было у всех, кто зарегистрировался
+	// до появления триггера в базе. Без неё профиль отвечал «не найден», поэтому
+	// заводим её на месте, а не полагаемся только на серверную сторону.
+	siteProfile.set(await createProfileRow(userId));
+}
+
+/** Создать недостающую строку профиля для текущего пользователя. */
+async function createProfileRow(userId) {
+	const session = get(siteSession);
+	if (session?.user?.id !== userId) return null;
+	const base =
+		session.user.user_metadata?.username ||
+		session.user.email?.split('@')[0] ||
+		'user';
+	// Ник уникален: при совпадении добавляем хвост идентификатора.
+	for (const username of [base, `${base}${userId.slice(-4)}`]) {
+		const { data, error } = await supabase
+			.from('profiles')
+			.insert({ id: userId, username })
+			.select()
+			.maybeSingle();
+		if (data) return data;
+		if (error?.code !== '23505') {
+			console.error('create profile', error);
+			return null;
+		}
+	}
+	return null;
 }
 
 if (supabase) {
@@ -41,7 +72,8 @@ export async function siteSignUp(email, password, username) {
 		options: { data: { username } }
 	});
 	if (error) throw error;
-	// профиль создаётся триггером в БД; подстрахуемся upsert-ом, если сессия уже есть
+	// профиль создаёт триггер on_auth_user_created; upsert — подстраховка на
+	// случай, если сессия появилась сразу и триггер ещё не отработал
 	if (data.user && data.session) {
 		await supabase.from('profiles').upsert({ id: data.user.id, username }).select();
 		await loadProfile(data.user.id);
