@@ -120,9 +120,20 @@
 		scroll-snap-align: start;
 	}
 	@media (max-width: 768px) {
+		/* На телефоне десктопные отступы между рядами занимали заметную долю
+		   экрана: полтора ряда пустоты на прокрутку. Сжимаем и промежуток
+		   между рядами, и отбивку заголовка. */
+		.row {
+			margin-bottom: 18px;
+		}
+		header {
+			margin-bottom: 9px;
+			padding: 0 2px;
+		}
 		.scroller {
 			grid-auto-columns: 134px;
 			gap: 12px;
+			padding: 2px;
 		}
 		h2 {
 			font-size: 17px;

@@ -209,7 +209,10 @@
 		}
 		.hero-sk {
 			height: 460px;
-			margin: 0 -12px 24px;
+			margin: 0 -12px 18px;
+		}
+		.picks-sk {
+			margin-bottom: 18px;
 		}
 	}
 </style>
