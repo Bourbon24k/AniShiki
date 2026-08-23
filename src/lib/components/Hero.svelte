@@ -282,17 +282,21 @@
 	   прямоугольником и мягко уходит в страницу со всех сторон. */
 	@media (min-width: 769px) {
 		.bg {
+			/* Именно farthest-corner: эллипс проходит ровно через угол блока,
+			   поэтому 100% шкалы — это угол, а не точка далеко за его
+			   пределами. С заданным вручную размером затухание начиналось
+			   снаружи, и углы оставались абсолютно резкими. */
 			-webkit-mask-image: radial-gradient(
-				118% 132% at 55% 45%,
-				#000 58%,
-				rgba(0, 0, 0, 0.6) 82%,
-				transparent 100%
+				farthest-corner at 50% 46%,
+				#000 44%,
+				rgba(0, 0, 0, 0.45) 76%,
+				transparent 99%
 			);
 			mask-image: radial-gradient(
-				118% 132% at 55% 45%,
-				#000 58%,
-				rgba(0, 0, 0, 0.6) 82%,
-				transparent 100%
+				farthest-corner at 50% 46%,
+				#000 44%,
+				rgba(0, 0, 0, 0.45) 76%,
+				transparent 99%
 			);
 		}
 		.edge-blur {
@@ -304,8 +308,8 @@
 			-webkit-backdrop-filter: blur(16px);
 			/* Прозрачен в середине — там картинка остаётся чёткой — и набирает
 			   плотность к краям, где и происходит расфокус. */
-			-webkit-mask-image: radial-gradient(112% 126% at 55% 45%, transparent 38%, #000 92%);
-			mask-image: radial-gradient(112% 126% at 55% 45%, transparent 38%, #000 92%);
+			-webkit-mask-image: radial-gradient(farthest-corner at 50% 46%, transparent 34%, #000 88%);
+			mask-image: radial-gradient(farthest-corner at 50% 46%, transparent 34%, #000 88%);
 		}
 	}
 
