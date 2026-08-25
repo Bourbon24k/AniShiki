@@ -11,7 +11,7 @@ import { build, files, version } from '$service-worker';
  */
 
 const VERSION_CACHE = `anishiki-app-${version}`;
-const IMAGE_CACHE = 'anishiki-images-v2';
+const IMAGE_CACHE = 'anishiki-images-v3';
 const DATA_CACHE = 'anishiki-data-v1';
 const KEEP = new Set([VERSION_CACHE, IMAGE_CACHE, DATA_CACHE]);
 
@@ -112,18 +112,22 @@ self.addEventListener('fetch', (event) => {
 async function cacheFirstImage(request) {
 	const cache = await caches.open(IMAGE_CACHE);
 	const hit = await cache.match(request);
-	if (hit) return hit;
+	// Непрозрачный ответ разрешено отдавать только на no-cors запрос. Раньше
+	// проверки не было: сохранённый однажды opaque-аватар возвращался и на
+	// обычный запрос, браузер отвечал сетевой ошибкой, и картинка не грузилась
+	// вовсе. cache.match режим запроса не учитывает, поэтому сверяем сами.
+	if (hit && (hit.type !== 'opaque' || request.mode === 'no-cors')) return hit;
 	try {
 		const response = await fetch(request);
 		// Непрозрачные ответы (CDN без CORS) тоже кладём: отдать их браузеру
 		// как картинку можно, читать содержимое нам и не нужно.
-		if (response.ok || response.type === 'opaque') {
+		if (response.ok || (response.type === 'opaque' && request.mode === 'no-cors')) {
 			cache.put(request, response.clone()).then(trimImages).catch(() => {});
 		}
 		return response;
 	} catch (e) {
 		const stale = await cache.match(request);
-		if (stale) return stale;
+		if (stale && (stale.type !== 'opaque' || request.mode === 'no-cors')) return stale;
 		throw e;
 	}
 }

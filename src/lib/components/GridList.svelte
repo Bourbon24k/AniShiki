@@ -32,6 +32,19 @@
 	}
 
 	onDestroy(() => stop?.());
+
+	/** Дубли в выдаче ломали ключи и всю отрисовку — см. ReleaseRow. */
+	$: unique = dedupe(items);
+
+	function dedupe(list) {
+		const seen = new Set();
+		return (list || []).filter((item) => {
+			const key = item?.id ?? item?.['@id'];
+			if (key == null || seen.has(key)) return key == null;
+			seen.add(key);
+			return true;
+		});
+	}
 </script>
 
 <div class="grid-wrap">
@@ -45,7 +58,7 @@
 		<div class="empty">{empty}</div>
 	{:else}
 		<div class="grid">
-			{#each items as anime (anime.id ?? anime['@id'])}
+			{#each unique as anime (anime.id ?? anime['@id'])}
 				<AnimeCard {anime} type="grid" />
 			{/each}
 		</div>

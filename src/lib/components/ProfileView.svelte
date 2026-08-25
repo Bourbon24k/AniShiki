@@ -71,6 +71,16 @@
 	function fullDate(date) {
 		return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', weekday: 'short' });
 	}
+
+	/** Повтор одного релиза в оценках ломал ключи и отрисовку всей страницы. */
+	$: uniqueVotes = (() => {
+		const seen = new Set();
+		return (p?.votes || []).filter((v) => {
+			if (v?.id == null || seen.has(v.id)) return false;
+			seen.add(v.id);
+			return true;
+		});
+	})();
 </script>
 
 <div class="profile">
@@ -205,7 +215,7 @@
 			{/each}
 		</nav>
 
-		{#if !p.statsHidden && (p.votes || []).length}
+		{#if !p.statsHidden && uniqueVotes.length}
 			<section class="card">
 				<div class="card-head">
 					<h2>Оценки</h2>
@@ -214,7 +224,7 @@
 					{/if}
 				</div>
 				<div class="votes">
-					{#each p.votes.slice(0, 12) as v (v.id)}
+					{#each uniqueVotes.slice(0, 12) as v (v.id)}
 						<a class="vote" href={`/release/${v.id}`}>
 							<div class="vposter">
 								{#if v.image}
@@ -235,7 +245,7 @@
 						</a>
 					{/each}
 				</div>
-				{#if p.votes.length > 12 && p.votesHref}
+				{#if uniqueVotes.length > 12 && p.votesHref}
 					<a class="see-all" href={p.votesHref}>Ещё оценки <Icon name="chevronRight" size={16} /></a>
 				{/if}
 			</section>

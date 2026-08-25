@@ -14,6 +14,23 @@
 	function scrollBy(dir) {
 		scroller?.scrollBy({ left: dir * scroller.clientWidth * 0.85, behavior: 'smooth' });
 	}
+
+	/**
+	 * Один и тот же тайтл в ряду встречается: API отдаёт дубли, а страницы
+	 * дозагрузки иногда повторяют элемент на стыке. Ключ по id при этом падал
+	 * с each_key_duplicate и рушил отрисовку всей страницы, а не одного ряда.
+	 */
+	$: unique = dedupe(items);
+
+	function dedupe(list) {
+		const seen = new Set();
+		return (list || []).filter((item) => {
+			const key = item?.id;
+			if (key == null || seen.has(key)) return key == null;
+			seen.add(key);
+			return true;
+		});
+	}
 </script>
 
 <section class="row">
@@ -37,7 +54,7 @@
 				<div class="cell"><Skeleton aspect="2/3" radius="16px" /></div>
 			{/each}
 		{:else}
-			{#each items as anime, i (anime.id)}
+			{#each unique as anime, i (anime.id)}
 				<div class="cell">
 					<AnimeCard {anime} type="grid" index={numbered ? i : null} />
 				</div>
