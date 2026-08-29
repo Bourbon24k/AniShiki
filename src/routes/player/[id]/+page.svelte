@@ -14,6 +14,7 @@
 		chat,
 		isHost,
 		hostOnly,
+		coStatus,
 		joinRoom,
 		leaveRoom,
 		setHostOnly,
@@ -135,6 +136,7 @@
 	// Совместный просмотр
 	let coName = '';
 	let coPanel = false;
+	let coRoomInput = '';
 	let chatText = '';
 	let applyingRemote = false;
 	$: coOn = $coActive;
@@ -199,21 +201,46 @@
 			return;
 		}
 		if (coName.trim()) try { localStorage.setItem('cowatch_name', coName.trim()); } catch {}
-		const id = $coRoomId || genRoomId();
+		const id = genRoomId();
 		joinRoom(id, coIdentity(), { onSync: applySync, onRequestState: sendCurrentState }, true);
+		setRoomUrl(id);
+		coPanel = true;
+	}
+	function joinExistingRoom() {
+		if (!coName.trim() && !currentSiteName()) {
+			showToast('Введите имя для комнаты', 'error');
+			return;
+		}
+		const id = coRoomInput.trim().toLowerCase();
+		if (!/^[a-z0-9]{6,32}$/.test(id)) {
+			showToast('Введите корректный код комнаты', 'error');
+			return;
+		}
+		if (coName.trim()) try { localStorage.setItem('cowatch_name', coName.trim()); } catch {}
+		joinRoom(id, coIdentity(), { onSync: applySync, onRequestState: sendCurrentState }, false);
+		setRoomUrl(id);
+		coPanel = true;
+	}
+	function setRoomUrl(id) {
 		const url = new URL(location.href);
 		url.searchParams.set('room', id);
 		history.replaceState(null, '', url);
-		coPanel = true;
 	}
 	function leaveCo() {
 		leaveRoom();
 		const url = new URL(location.href);
 		url.searchParams.delete('room');
 		history.replaceState(null, '', url);
+		coPanel = false;
 	}
-	function copyRoomLink() {
-		navigator.clipboard?.writeText(location.href).then(() => showToast('Ссылка скопирована', 'success'));
+	async function copyRoomLink() {
+		try {
+			if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
+			await navigator.clipboard.writeText(location.href);
+			showToast('Ссылка-приглашение скопирована', 'success');
+		} catch {
+			showToast('Не удалось скопировать ссылку', 'error');
+		}
 	}
 	function submitChat() {
 		const t = chatText.trim();
@@ -1014,52 +1041,6 @@
 		</div>
 
 		<aside class="panel" class:open={panelOpen}>
-			{#if supabaseEnabled}
-				<div class="group cowatch">
-					<h3>Совместный просмотр {#if coOn}<span class="cnt">{$participants.length}</span>{/if}</h3>
-					{#if !coOn}
-						<p class="co-hint">Смотрите вместе с друзьями — действия плеера синхронизируются.</p>
-						{#if !currentSiteName()}
-							<input class="co-name" placeholder="Ваше имя" bind:value={coName} maxlength="24" />
-						{/if}
-						<button class="co-btn primary" on:click={startRoom}>Создать комнату</button>
-					{:else}
-						<div class="co-room">
-							<button class="co-btn" on:click={copyRoomLink}><Icon name="feed" size={16} /> Скопировать ссылку</button>
-							<div class="parts">
-								{#each $participants as p (p.id)}
-									<span class="part" class:host={p.host} title={p.host ? p.name + ' (хост)' : p.name}>
-										{#if p.avatar}<img src={p.avatar} alt="" referrerpolicy="no-referrer" />{:else}<span class="pa">{(p.name || '?')[0]}</span>{/if}
-										{p.name}{#if p.host} ★{/if}
-									</span>
-								{/each}
-							</div>
-
-							{#if $isHost}
-								<label class="co-toggle">
-									<input type="checkbox" checked={$hostOnly} on:change={(e) => setHostOnly(e.currentTarget.checked)} />
-									<span>Только я управляю</span>
-								</label>
-							{:else if $hostOnly}
-								<p class="co-hint">Воспроизведением управляет хост.</p>
-							{/if}
-							<div class="chatbox">
-								<div class="msgs">
-									{#each $chat as m (m.ts + m.from)}
-										<div class="msg"><b>{m.name}:</b> {m.text}</div>
-									{/each}
-								</div>
-								<form class="chat-in" on:submit|preventDefault={submitChat}>
-									<input placeholder="Сообщение…" bind:value={chatText} maxlength="300" />
-									<button type="submit" aria-label="Отправить"><Icon name="chevronRight" size={18} /></button>
-								</form>
-							</div>
-							<button class="co-btn danger" on:click={leaveCo}>Выйти из комнаты</button>
-						</div>
-					{/if}
-				</div>
-			{/if}
-
 			<div class="group">
 				<h3>Озвучка</h3>
 				<div class="chips">
@@ -1114,6 +1095,71 @@
 				{#if streamProvider}<p class="seg-hint">Поток: {streamProvider}.</p>{/if}
 				<p class="seg-hint">«Оригинальный» включайте, если поток не открылся в браузере.</p>
 			</div>
+
+			{#if supabaseEnabled}
+				<div class="group cowatch-entry">
+					<button class="cowatch-toggle" class:active={coOn} on:click={() => (coPanel = !coPanel)}>
+						<span><Icon name="friends" size={18} /> Совместный просмотр</span>
+						<span class="co-toggle-meta">{#if coOn}<b>{$participants.length}</b>{/if}<Icon name="chevronDown" size={18} /></span>
+					</button>
+
+					{#if coPanel}
+						<div class="cowatch-body">
+							<h3>Совместный просмотр {#if coOn}<span class="cnt">{$participants.length}</span>{/if}</h3>
+							{#if $coStatus === 'connecting' || $coStatus === 'reconnecting'}
+								<p class="co-hint">Подключаемся к комнате…</p>
+							{:else if $coStatus === 'error'}
+								<p class="co-hint co-error">Связь с комнатой прервана. Попробуйте подключиться снова.</p>
+							{/if}
+
+							{#if !coOn}
+								<p class="co-hint">Создайте комнату или введите код из приглашения. Воспроизведение, серия и перемотка синхронизируются.</p>
+								{#if !currentSiteName()}
+									<input class="co-name" placeholder="Ваше имя" bind:value={coName} maxlength="24" />
+								{/if}
+								<input class="co-name" placeholder="Код комнаты" bind:value={coRoomInput} maxlength="32" autocapitalize="off" />
+								<div class="co-actions">
+									<button class="co-btn primary" on:click={startRoom}>Создать</button>
+									<button class="co-btn" on:click={joinExistingRoom} disabled={!coRoomInput.trim()}>Войти</button>
+								</div>
+							{:else}
+								<div class="co-room">
+									<button class="co-btn" on:click={copyRoomLink}><Icon name="feed" size={16} /> Скопировать приглашение</button>
+									<div class="parts">
+										{#each $participants as p (p.id)}
+											<span class="part" class:host={p.host} title={p.host ? p.name + ' (хост)' : p.name}>
+												{#if p.avatar}<img src={p.avatar} alt="" referrerpolicy="no-referrer" />{:else}<span class="pa">{(p.name || '?')[0]}</span>{/if}
+												{p.name}{#if p.host} ★{/if}
+											</span>
+										{/each}
+									</div>
+
+									{#if $isHost}
+										<label class="co-toggle-lock">
+											<input type="checkbox" checked={$hostOnly} on:change={(e) => setHostOnly(e.currentTarget.checked)} />
+											<span>Только хост управляет</span>
+										</label>
+									{:else if $hostOnly}
+										<p class="co-hint">Воспроизведением управляет хост.</p>
+									{/if}
+									<div class="chatbox">
+										<div class="msgs">
+											{#each $chat as m (m.ts + m.from)}
+												<div class="msg"><b>{m.name}:</b> {m.text}</div>
+											{/each}
+										</div>
+										<form class="chat-in" on:submit|preventDefault={submitChat}>
+											<input placeholder="Сообщение…" bind:value={chatText} maxlength="300" />
+											<button type="submit" aria-label="Отправить"><Icon name="chevronRight" size={18} /></button>
+										</form>
+									</div>
+									<button class="co-btn danger" on:click={leaveCo}>Выйти из комнаты</button>
+								</div>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			{/if}
 		</aside>
 	</div>
 </div>
@@ -1649,10 +1695,46 @@
 	}
 
 	/* совместный просмотр */
-	.cowatch {
-		padding-bottom: 20px;
-		border-bottom: 1px solid var(--glass-border);
+	.cowatch-entry { margin-top: 4px; }
+	.cowatch-toggle {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 11px 10px;
+		border: 1px solid var(--glass-border);
+		border-radius: 11px;
+		background: var(--elevated-color);
+		color: var(--text-color);
+		font: inherit;
+		font-size: 13px;
+		font-weight: 700;
+		cursor: pointer;
 	}
+	.cowatch-toggle > span,
+	.co-toggle-meta {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+	}
+	.cowatch-toggle.active {
+		border-color: color-mix(in srgb, var(--primary-color) 60%, var(--glass-border));
+		color: var(--primary-color);
+	}
+	.co-toggle-meta b {
+		min-width: 18px;
+		height: 18px;
+		display: grid;
+		place-items: center;
+		border-radius: 9px;
+		background: var(--primary-color);
+		color: #fff;
+		font-size: 11px;
+	}
+	.cowatch-body {
+		padding: 14px 2px 2px;
+	}
+	.cowatch-body h3 { margin: 0 0 10px; }
 	.co-hint {
 		font-size: 12.5px;
 		color: var(--secondary-text-color);
@@ -1691,6 +1773,12 @@
 		border-color: transparent;
 		color: #fff;
 	}
+	.co-actions {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
+	}
+	.co-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 	.co-btn.danger {
 		color: var(--danger-color);
 	}
@@ -1716,7 +1804,7 @@
 	.part.host {
 		background: color-mix(in srgb, var(--primary-color) 22%, var(--alt-background-color));
 	}
-	.co-toggle {
+	.co-toggle-lock {
 		display: flex;
 		align-items: center;
 		gap: 8px;
@@ -1725,7 +1813,7 @@
 		cursor: pointer;
 		user-select: none;
 	}
-	.co-toggle input {
+	.co-toggle-lock input {
 		width: 16px;
 		height: 16px;
 		accent-color: var(--primary-color);

@@ -11,12 +11,14 @@ export const chat = writable([]);
 export const isHost = writable(false);
 export const hostOnly = writable(false); // только хост управляет
 export const hostId = writable(null);
+export const coStatus = writable('idle'); // idle | connecting | connected | reconnecting | error
 
-export const selfId = Math.random().toString(36).slice(2, 10);
+export const selfId = globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 10);
 
 let channel = null;
 let hooks = {};
 let heartbeat = null;
+let presence = null;
 
 export function genRoomId() {
 	return Math.random().toString(36).slice(2, 8);
@@ -36,49 +38,82 @@ export function joinRoom(roomId, identity, h = {}, asHost = false) {
 	chat.set([]);
 	isHost.set(asHost);
 	hostOnly.set(false);
+	coStatus.set('connecting');
+	presence = { id: selfId, name: identity.name, avatar: identity.avatar || null, host: asHost, at: Date.now() };
 
 	channel = supabase.channel(`cowatch:${roomId}`, {
 		config: { presence: { key: selfId } }
 	});
+	const roomChannel = channel;
 
-	channel.on('broadcast', { event: 'sync' }, ({ payload }) => {
+	roomChannel.on('broadcast', { event: 'sync' }, ({ payload }) => {
+		if (channel !== roomChannel) return;
 		if (payload?.from === selfId) return;
 		// при hostOnly слушаем только хоста
 		if (get(hostOnly) && payload.from !== get(hostId)) return;
 		hooks.onSync?.(payload);
 	});
-	channel.on('broadcast', { event: 'reqstate' }, ({ payload }) => {
-		if (payload?.from !== selfId) hooks.onRequestState?.();
+	roomChannel.on('broadcast', { event: 'reqstate' }, ({ payload }) => {
+		if (channel !== roomChannel) return;
+		// Иначе все гости отвечают одновременно и скачут между своими позициями.
+		if (payload?.from !== selfId && get(isHost)) hooks.onRequestState?.();
 	});
-	channel.on('broadcast', { event: 'chat' }, ({ payload }) => {
+	roomChannel.on('broadcast', { event: 'chat' }, ({ payload }) => {
+		if (channel !== roomChannel) return;
 		if (payload?.from !== selfId) chat.update((c) => [...c, payload]);
 	});
-	channel.on('broadcast', { event: 'meta' }, ({ payload }) => {
-		if (payload?.from !== selfId) hostOnly.set(!!payload.hostOnly);
+	roomChannel.on('broadcast', { event: 'meta' }, ({ payload }) => {
+		if (channel !== roomChannel) return;
+		// Метаданные комнаты принимает только от актуального хоста.
+		if (payload?.from !== selfId && payload?.from === get(hostId)) hostOnly.set(!!payload.hostOnly);
 	});
-	channel.on('presence', { event: 'sync' }, () => {
-		const list = Object.values(channel.presenceState()).flat();
+	roomChannel.on('presence', { event: 'sync' }, () => {
+		if (channel !== roomChannel) return;
+		const list = /** @type {any[]} */ (Object.values(roomChannel.presenceState()).flat());
 		participants.set(list);
-		// хост = участник с флагом host, иначе самый ранний по времени входа
+		// Хост = участник с флагом host, иначе самый ранний по времени входа.
+		// Если создатель ушёл, первый оставшийся становится новым хостом и
+		// продолжает ресинкать комнату вместо «зависшей» сессии.
 		const host = list.find((p) => p.host) || [...list].sort((a, b) => (a.at || 0) - (b.at || 0))[0];
 		hostId.set(host?.id || null);
+		const amHost = host?.id === selfId;
+		if (amHost && !get(isHost)) {
+			isHost.set(true);
+			presence = { ...presence, host: true };
+			roomChannel.track(presence);
+			startHeartbeat();
+		} else if (!amHost && get(isHost)) {
+			isHost.set(false);
+			clearInterval(heartbeat);
+			heartbeat = null;
+		}
 		// хост рассылает текущие настройки комнаты новоприбывшим
 		if (get(isHost)) send('meta', { hostOnly: get(hostOnly) });
 	});
 
-	channel.subscribe(async (status) => {
+	roomChannel.subscribe(async (status) => {
+		if (channel !== roomChannel) return;
 		if (status === 'SUBSCRIBED') {
-			await channel.track({ id: selfId, name: identity.name, avatar: identity.avatar || null, host: asHost, at: Date.now() });
+			await roomChannel.track(presence);
 			coActive.set(true);
 			coRoomId.set(roomId);
+			coStatus.set('connected');
 			send('reqstate', {});
 			// хост периодически шлёт состояние → коррекция дрейфа у гостей
-			if (asHost) {
-				clearInterval(heartbeat);
-				heartbeat = setInterval(() => hooks.onRequestState?.(), 20000);
-			}
+			if (asHost) startHeartbeat();
+		} else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR') {
+			coStatus.set('reconnecting');
+		} else if (status === 'CLOSED') {
+			coStatus.set('error');
 		}
 	});
+}
+
+function startHeartbeat() {
+	clearInterval(heartbeat);
+	heartbeat = setInterval(() => {
+		if (get(isHost)) hooks.onRequestState?.();
+	}, 20000);
 }
 
 function send(event, payload) {
@@ -119,4 +154,6 @@ export function leaveRoom() {
 	isHost.set(false);
 	hostOnly.set(false);
 	hostId.set(null);
+	coStatus.set('idle');
+	presence = null;
 }
