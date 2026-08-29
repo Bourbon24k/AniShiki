@@ -276,6 +276,10 @@
 		if (query.trim()) params.set('query', query.trim());
 		for (const g of f.genres) params.append('genre', g);
 		if (activePreset > 0) params.set('type', String(activePreset));
+		if (f.season) params.set('season', String(f.season));
+		if (f.start_year && f.start_year === f.end_year) params.set('year', String(f.start_year));
+		if (f.country) params.set('country', f.country);
+		if (f.studio?.trim()) params.set('studio', f.studio.trim());
 		const search = params.toString();
 		goto(search ? `/search?${search}` : '/search', {
 			replaceState: true,
@@ -309,7 +313,11 @@
 			f.start_year = Number(year);
 			f.end_year = Number(year);
 		}
-		if (f.genres.length || season || year) activePreset = -1;
+		const country = url.get('country');
+		if (country) f.country = country;
+		const studio = url.get('studio');
+		if (studio) f.studio = studio;
+		if (f.genres.length || season || year || country || studio) activePreset = -1;
 
 		const q = url.get('query');
 		if (q) query = q;
@@ -557,6 +565,17 @@
 				<button class="chip small" class:active={f.country === o.value} on:click={() => { f.country = o.value; applyFilters(); }}>{o.label}</button>
 			{/each}
 		</div>
+	</div>
+
+	<div class="fgroup">
+		<h3>Студия</h3>
+		<input
+			class="studio-input"
+			placeholder="Например, Shenei Animation"
+			bind:value={f.studio}
+			on:change={applyFilters}
+			on:keydown={(e) => e.key === 'Enter' && applyFilters()}
+		/>
 	</div>
 
 	{#if $userToken}
@@ -898,6 +917,18 @@
 		color: var(--text-color);
 		font-size: 15px;
 	}
+	.studio-input {
+		width: 100%;
+		padding: 10px 12px;
+		border: 1px solid var(--glass-border);
+		border-radius: 10px;
+		background: var(--background-color);
+		color: var(--text-color);
+		font: inherit;
+		font-size: 14px;
+		outline: none;
+	}
+	.studio-input:focus { border-color: var(--primary-color); }
 	.sheet-actions {
 		display: flex;
 		gap: 10px;

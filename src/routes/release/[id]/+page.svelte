@@ -227,14 +227,26 @@
 
 	$: if (releaseId) load(releaseId);
 
-	/** @type {[string, (r: any) => any][]} */
+	/** Метаданные с точным фильтром Anixart становятся ссылками на каталог. */
 	const infoRows = [
-		['Студия', (r) => r.studio],
-		['Автор', (r) => r.author],
-		['Режиссёр', (r) => r.director],
-		['Страна', (r) => r.country],
-		['Год', (r) => r.year]
+		{ label: 'Студия', get: (r) => r.studio, filter: 'studio' },
+		{ label: 'Автор', get: (r) => r.author },
+		{ label: 'Режиссёр', get: (r) => r.director },
+		{ label: 'Страна', get: (r) => r.country, filter: 'country' },
+		{ label: 'Год', get: (r) => r.year, filter: 'year' }
 	];
+	const FILTER_COUNTRIES = new Set(['Япония', 'Китай', 'Южная Корея']);
+	function infoSearchHref(row, value) {
+		if (!row.filter) return null;
+		const params = new URLSearchParams();
+		if (row.filter === 'studio') params.set('studio', value);
+		if (row.filter === 'country' && FILTER_COUNTRIES.has(value)) params.set('country', value);
+		if (row.filter === 'year') {
+			const year = String(value).match(/(?:19|20)\d{2}/)?.[0];
+			if (year) params.set('year', year);
+		}
+		return params.size ? `/search?${params}` : null;
+	}
 </script>
 
 <svelte:head>
@@ -332,9 +344,15 @@
 			{/if}
 
 			<div class="info-grid">
-				{#each infoRows as [label, get]}
-					{#if get(release)}
-						<div class="info-row"><span class="k">{label}</span><span class="v">{get(release)}</span></div>
+				{#each infoRows as row}
+					{@const value = row.get(release)}
+					{@const href = value && infoSearchHref(row, value)}
+					{#if value}
+						{#if href}
+							<a class="info-row searchable" {href}><span class="k">{row.label}</span><span class="v">{value}</span></a>
+						{:else}
+							<div class="info-row"><span class="k">{row.label}</span><span class="v">{value}</span></div>
+						{/if}
 					{/if}
 				{/each}
 			</div>
@@ -746,6 +764,18 @@
 		font-size: 13px;
 		text-align: right;
 	}
+	.info-row.searchable {
+		color: inherit;
+		text-decoration: none;
+		cursor: pointer;
+		transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+	}
+	.info-row.searchable:hover {
+		border-color: color-mix(in srgb, var(--primary-color) 58%, var(--glass-border));
+		background: color-mix(in srgb, var(--primary-color) 8%, var(--alt-background-color));
+		transform: translateY(-1px);
+	}
+	.info-row.searchable .v { color: var(--primary-color); }
 	.rel-head {
 		display: flex;
 		align-items: center;
