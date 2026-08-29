@@ -34,6 +34,24 @@ function isOnline(lastActiveAt) {
 	return Number.isFinite(ms) && Date.now() - ms < 5 * 60 * 1000;
 }
 
+/** 0 — всем, 1 — друзьям, 2 — никому; старые флаги читаем как fallback. */
+function privacyValue(profile, key, legacyKey) {
+	const value = Number(profile?.[key]);
+	if (value === 0 || value === 1 || value === 2) return value;
+	return profile?.[legacyKey] ? 2 : 0;
+}
+
+async function areFriends(otherId) {
+	if (!uid() || uid() === otherId) return uid() === otherId;
+	const { data } = await supabase
+		.from('friendships')
+		.select('requester')
+		.eq('status', 'accepted')
+		.or(`and(requester.eq.${uid()},addressee.eq.${otherId}),and(requester.eq.${otherId},addressee.eq.${uid()})`)
+		.limit(1);
+	return Boolean(data?.length);
+}
+
 /**
  * Любимые жанры по строкам списков, оценок и избранного.
  *
@@ -98,7 +116,11 @@ export async function getSiteProfile(userId) {
 	if (!profile) return null;
 
 	const mine = profile.id === uid();
-	const statsHidden = Boolean(profile.is_stats_hidden) && !mine;
+	const isFriend = !mine && (await areFriends(profile.id));
+	const canSee = (value) => mine || value === 0 || (value === 1 && isFriend);
+	const statsHidden = !canSee(privacyValue(profile, 'privacy_stats', 'is_stats_hidden'));
+	const socialHidden = !canSee(privacyValue(profile, 'privacy_social', 'is_social_hidden'));
+	const countsHidden = !canSee(privacyValue(profile, 'privacy_counts', 'is_counts_hidden'));
 
 	const [lists, ratings, favorites, history, activity, collections, historyStats, historyTotal, friends] =
 		await Promise.all([
@@ -189,9 +211,10 @@ export async function getSiteProfile(userId) {
 		isVerified: Boolean(profile.is_verified),
 		isSponsor: Boolean(profile.is_sponsor),
 		statsHidden,
-		socialHidden: Boolean(profile.is_social_hidden) && !mine,
-		countsHidden: Boolean(profile.is_counts_hidden) && !mine,
-		friendRequestsDisallowed: Boolean(profile.is_friend_requests_disallowed),
+		socialHidden,
+		countsHidden,
+		friendRequestsDisallowed:
+			Number(profile.privacy_friend_requests) === 2 || Boolean(profile.is_friend_requests_disallowed),
 		socials: {
 			vk: profile.vk_page,
 			tg: profile.tg_page,

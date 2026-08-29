@@ -423,7 +423,7 @@
 			{/if}
 
 			{#if $siteSession}
-				<SiteComments releaseId={release.id} />
+				<SiteComments releaseId={release.id} {release} />
 			{:else}
 				<Comments {releaseId} />
 			{/if}

@@ -16,8 +16,105 @@ const EPISODE_SYNC_KEY = 'episode_sync_at';
 const SYNC_INTERVAL = 30 * 60 * 1000; // не чаще раза в полчаса
 const SYNC_LIMIT = 12; // столько тайтлов проверяем за проход
 
+/**
+ * Описание системного уведомления. Данные из базы должны быть полезны и в
+ * шторке ОС: «Новое уведомление» не объясняет человеку, зачем открывать
+ * приложение. Старые строки тоже приводим к осмысленному тексту.
+ */
+export function notificationCopy(row = {}) {
+	const type = String(row.type || '');
+	const title = String(row.title || '').trim();
+	const body = String(row.body || '').trim();
+	if (title && title.toLowerCase() !== 'новое уведомление') {
+		return { title, body: body || fallbackBody(type) };
+	}
+	if (type === 'friend_request') return { title: 'Новая заявка в друзья', body: body || 'Откройте раздел «Друзья», чтобы ответить.' };
+	if (type === 'friend_accepted') return { title: 'Заявка в друзья принята', body: body || 'Теперь вы друзья.' };
+	if (type === 'comment') return { title: 'Новый ответ на комментарий', body: body || 'Откройте релиз, чтобы прочитать ответ.' };
+	if (type === 'episode') return { title: 'Новая серия', body: body || 'Вышла новая серия в тайтле из списка «Смотрю».' };
+	return { title: 'Новое событие в AniShiki', body: body || 'Откройте раздел «События», чтобы посмотреть подробности.' };
+}
+
+/** Текст события Anixart для системной шторки (API не отдаёт готовый title). */
+export function anixartNotificationCopy(row = {}) {
+	const type = String(row.type || '');
+	const who = row.by_profile?.login || row.profile?.login || '';
+	const release = typeof row.release === 'object' ? row.release : null;
+	if (type === 'friend') {
+		return {
+			title: who ? `${who}: друзья` : 'Событие в друзьях',
+			body: row.status === 'request' ? 'Отправил(а) заявку в друзья' : 'Добавил(а) вас в друзья',
+			url: row.by_profile?.id || row.profile?.id ? `/profile/${row.by_profile?.id || row.profile?.id}` : '/friends'
+		};
+	}
+	if (type === 'releaseComment') {
+		return { title: who ? `${who} ответил(а) на комментарий` : 'Новый ответ на комментарий', body: row.comment?.message || 'Откройте релиз, чтобы прочитать ответ.', url: row.comment?.release?.id ? `/release/${row.comment.release.id}` : '/notifications' };
+	}
+	if (type === 'collectionComment') {
+		return { title: who ? `${who} ответил(а) в коллекции` : 'Новый комментарий в коллекции', body: row.comment?.message || 'Откройте коллекцию, чтобы прочитать ответ.', url: row.collection?.id ? `/collection/${row.collection.id}` : '/collections' };
+	}
+	if (type === 'relatedRelease') {
+		return { title: 'Новый связанный релиз', body: release?.title_ru || release?.title || 'Откройте карточку, чтобы посмотреть.', url: release?.id ? `/release/${release.id}` : '/notifications' };
+	}
+	const title = release?.title_ru || release?.title || row.title || 'Новая серия';
+	return {
+		title: `Новая серия: ${title}`,
+		body: row.episode?.name || row.message || 'Серия доступна к просмотру.',
+		url: release?.id || row.release ? `/release/${release?.id || row.release}` : '/notifications'
+	};
+}
+
+function fallbackBody(type) {
+	if (type === 'friend_request') return 'Откройте раздел «Друзья», чтобы ответить.';
+	if (type === 'friend_accepted') return 'Теперь вы друзья.';
+	if (type === 'comment') return 'Откройте релиз, чтобы прочитать ответ.';
+	if (type === 'episode') return 'Вышла новая серия в тайтле из списка «Смотрю».';
+	return '';
+}
+
+/**
+ * Подписка на вставки в таблицу уведомлений. До этого новые строки становились
+ * видны только после ручного открытия экрана «События»; теперь бейдж и шторка
+ * ОС обновляются в момент прихода события.
+ */
+export function watchNotifications(userId, onInsert) {
+	if (!supabase || !userId) return () => {};
+	const channel = supabase
+		.channel(`notifications:${userId}`)
+		.on(
+			'postgres_changes',
+			{ event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
+			(payload) => onInsert?.(payload.new)
+		)
+		.subscribe((status) => {
+			if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+				console.warn('notifications realtime', status);
+			}
+		});
+	return () => supabase.removeChannel(channel);
+}
+
 function uid() {
 	return get(siteSession)?.user?.id || null;
+}
+
+const PREFERENCE_BY_TYPE = {
+	episode: 'is_episode_notifications_enabled',
+	related_release: 'is_related_release_notifications_enabled',
+	comment: 'is_comment_notifications_enabled',
+	collection_comment: 'is_my_collection_comment_notifications_enabled',
+	report: 'is_report_process_notifications_enabled'
+};
+
+/** Проверяет подписку получателя до создания строки, как это делает Anixart. */
+async function recipientAllows(userId, type) {
+	const field = PREFERENCE_BY_TYPE[type];
+	if (!field || !userId || userId === uid()) return true;
+	const { data, error } = await supabase.from('profiles').select(field).eq('id', userId).maybeSingle();
+	// Старые профили, на которых миграция ещё не появилась, не лишаем
+	// уведомлений: отсутствие поля означает стандартное «включено».
+	if (error || !data || data[field] == null) return true;
+	return Boolean(data[field]);
 }
 
 export async function listNotifications(limit = 50) {
@@ -68,7 +165,8 @@ export async function removeNotification(id) {
 export async function notify(userId, { type, title, body, releaseId, image, url }) {
 	if (!supabase || !uid() || !userId) return;
 	try {
-		await supabase.from('notifications').insert({
+		if (!(await recipientAllows(userId, type))) return false;
+		const { error } = await supabase.from('notifications').insert({
 			user_id: userId,
 			actor_id: uid(),
 			type,
@@ -78,8 +176,11 @@ export async function notify(userId, { type, title, body, releaseId, image, url 
 			image: image ?? null,
 			url: url ?? null
 		});
+		if (error) throw error;
+		return true;
 	} catch (e) {
 		console.error('notify', e);
+		return false;
 	}
 }
 
@@ -87,7 +188,7 @@ export async function notify(userId, { type, title, body, releaseId, image, url 
 async function notifySelf({ type, title, body, releaseId, image, url }) {
 	if (!supabase || !uid()) return;
 	try {
-		await supabase.from('notifications').insert({
+		const { error } = await supabase.from('notifications').insert({
 			user_id: uid(),
 			actor_id: uid(),
 			type,
@@ -97,8 +198,11 @@ async function notifySelf({ type, title, body, releaseId, image, url }) {
 			image: image ?? null,
 			url: url ?? null
 		});
+		if (error) throw error;
+		return true;
 	} catch (e) {
 		console.error('notify self', e);
+		return false;
 	}
 }
 

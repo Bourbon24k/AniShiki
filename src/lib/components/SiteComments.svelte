@@ -6,11 +6,13 @@
 	import Icon from './Icon.svelte';
 
 	export let releaseId;
+	export let release = null;
 
 	let items = [];
 	let text = '';
 	let loading = true;
 	let sending = false;
+	let replyTo = null;
 
 	$: me = $siteSession?.user?.id;
 
@@ -25,8 +27,9 @@
 		if (!t) return;
 		sending = true;
 		try {
-			await addComment(releaseId, t);
+			await addComment(releaseId, t, { replyToUserId: replyTo?.user_id, release });
 			text = '';
+			replyTo = null;
 			await load();
 		} catch {
 			showToast('Не удалось отправить', 'error');
@@ -48,14 +51,28 @@
 		return d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 	}
 
+	function startReply(comment) {
+		if (!me) return showToast('Войдите в аккаунт AniShiki', 'error');
+		replyTo = comment;
+		text = `${comment.author?.username ? `${comment.author.username}, ` : ''}`;
+		document.getElementById('site-comment-input')?.focus();
+	}
+
 	onMount(load);
 </script>
 
 <section class="sc">
 	<h2>Обсуждение AniShiki {#if items.length}<span class="cnt">{items.length}</span>{/if}</h2>
 
+	{#if replyTo}
+		<div class="reply-hint">
+			Ответ для {replyTo.author?.username || 'пользователя'}
+			<button on:click={() => { replyTo = null; text = ''; }} aria-label="Отменить ответ">×</button>
+		</div>
+	{/if}
 	<div class="composer">
 		<textarea
+			id="site-comment-input"
 			bind:value={text}
 			rows="2"
 			maxlength="2000"
@@ -92,6 +109,9 @@
 							{/if}
 						</div>
 						<p class="text">{c.text}</p>
+						{#if c.user_id !== me}
+							<button class="reply" on:click={() => startReply(c)}>Ответить</button>
+						{/if}
 					</div>
 				</div>
 			{/each}
@@ -123,6 +143,25 @@
 		gap: 10px;
 		align-items: flex-end;
 		margin-bottom: 22px;
+	}
+	.reply-hint {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 8px 11px;
+		margin-bottom: 8px;
+		border-radius: 10px;
+		background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+		font-size: 13px;
+		color: var(--secondary-text-color);
+	}
+	.reply-hint button, .reply {
+		border: 0;
+		background: transparent;
+		color: var(--primary-color);
+		font: inherit;
+		font-weight: 700;
+		cursor: pointer;
 	}
 	textarea {
 		flex: 1;
@@ -217,5 +256,10 @@
 		color: var(--secondary-text-color);
 		white-space: pre-wrap;
 		word-break: break-word;
+	}
+	.reply {
+		margin-top: 6px;
+		padding: 0;
+		font-size: 12px;
 	}
 </style>

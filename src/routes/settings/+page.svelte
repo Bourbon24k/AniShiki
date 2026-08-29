@@ -80,6 +80,16 @@
 		{ field: 'is_report_process_notifications_enabled', method: 'setReportProgressNotification', label: 'Обработка жалоб' }
 	];
 
+	// Тот же набор подписок для собственного аккаунта. Раньше у AniShiki их
+	// вообще не было: уведомления либо приходили все, либо не приходили вовсе.
+	const siteNotificationToggles = [
+		{ field: 'is_episode_notifications_enabled', label: 'Новые серии' },
+		{ field: 'is_related_release_notifications_enabled', label: 'Связанные релизы' },
+		{ field: 'is_comment_notifications_enabled', label: 'Ответы на комментарии' },
+		{ field: 'is_my_collection_comment_notifications_enabled', label: 'Комментарии в моих коллекциях' },
+		{ field: 'is_report_process_notifications_enabled', label: 'Обработка жалоб' }
+	];
+
 	async function loadAccount() {
 		if (!$userToken) return;
 		loadingAccount = true;
@@ -304,15 +314,22 @@
 	let siteAvatarBusy = false;
 	let siteSaving = false;
 
-	// Приватность аккаунта сайта — булева: показывать блок или нет. Значения
-	// Anixart (все / друзья / никто) хранить негде: у сайта нет «только друзьям»
-	// на уровне политик БД, а обещать в интерфейсе то, чего не делает сервер,
-	// хуже, чем честный переключатель.
+	// У аккаунта сайта теперь та же трёхступенчатая приватность, что у Anixart.
+	// Старые флаги пишем вместе с новым полем, чтобы существующие профили не
+	// меняли поведение до применения миграции.
 	const sitePrivacyKeys = [
-		{ field: 'is_stats_hidden', label: 'Скрыть статистику, оценки и историю' },
-		{ field: 'is_counts_hidden', label: 'Скрыть счётчики коллекций и друзей' },
-		{ field: 'is_social_hidden', label: 'Скрыть социальные сети' },
-		{ field: 'is_friend_requests_disallowed', label: 'Запретить заявки в друзья' }
+		{ field: 'privacy_stats', legacy: 'is_stats_hidden', label: 'Статистика, оценки и история', options: privacyOptions },
+		{ field: 'privacy_counts', legacy: 'is_counts_hidden', label: 'Комментарии, коллекции, друзья', options: privacyOptions },
+		{ field: 'privacy_social', legacy: 'is_social_hidden', label: 'Социальные сети', options: privacyOptions },
+		{
+			field: 'privacy_friend_requests',
+			legacy: 'is_friend_requests_disallowed',
+			label: 'Заявки в друзья',
+			options: [
+				{ value: 0, label: 'Все пользователи' },
+				{ value: 2, label: 'Никто' }
+			]
+		}
 	];
 
 	function openSiteSheet(name) {
@@ -405,14 +422,41 @@
 		siteSaving = false;
 	}
 
-	async function toggleSitePrivacy(item) {
-		const previous = Boolean($siteProfile?.[item.field]);
+	function sitePrivacyValue(item) {
+		const value = Number($siteProfile?.[item.field]);
+		if (value === 0 || value === 1 || value === 2) return value;
+		return $siteProfile?.[item.legacy] ? 2 : 0;
+	}
+
+	async function setSitePrivacy(item, value) {
 		try {
-			await updateProfile({ [item.field]: !previous });
+			await updateProfile({ [item.field]: value, [item.legacy]: value === 2 });
 			await refreshProfile();
 		} catch (e) {
 			console.error('site privacy', e);
-			showToast('Не удалось сохранить', 'error');
+			// Пока обновление базы не применено, старые флаги всё ещё умеют
+			// «всем / никому». Не делаем вид, что «только друзьям» уже работает.
+			if (e?.code === '42703' && value !== 1) {
+				try {
+					await updateProfile({ [item.legacy]: value === 2 });
+					await refreshProfile();
+					return;
+				} catch (legacyError) {
+					console.error('site privacy legacy', legacyError);
+				}
+			}
+			showToast(value === 1 ? 'Режим «только друзьям» появится после обновления базы' : 'Не удалось сохранить', 'error');
+		}
+	}
+
+	async function toggleSiteNotification(item) {
+		const previous = $siteProfile?.[item.field];
+		try {
+			await updateProfile({ [item.field]: previous !== false });
+			await refreshProfile();
+		} catch (e) {
+			console.error('site notification', e);
+			showToast('Не удалось изменить подписку', 'error');
 		}
 	}
 
@@ -554,6 +598,11 @@
 							<span>Приватность</span>
 							<Icon name="chevronRight" size={17} />
 						</button>
+						<button class="row" on:click={() => openSiteSheet('site-notifications')}>
+							<Icon name="notification" size={18} />
+							<span>Уведомления AniShiki</span>
+							<Icon name="chevronRight" size={17} />
+						</button>
 						<button class="row" on:click={() => { emailDraft = $siteSession.user?.email || ''; sheet = 'site-email'; }}>
 							<Icon name="notification" size={18} />
 							<span>Почта</span>
@@ -678,13 +727,13 @@
 					<span class="label">Системные уведомления</span>
 					<span class="hint">
 						{#if $notificationPermission === 'granted'}
-							Разрешены — сообщим о новых сериях
+							Разрешены — новые события придут сразу, пока приложение запущено
 						{:else if $notificationPermission === 'denied'}
 							Запрещены в настройках устройства
 						{:else if !$standalone && isIosSafari()}
 							На iPhone доступны только в установленном приложении
 						{:else}
-							Сообщим, когда выйдет серия из списка «Смотрю»
+							Покажем новые серии, ответы и заявки в друзья
 						{/if}
 					</span>
 				</div>
@@ -890,22 +939,22 @@
 
 <Sheet open={sheet === 'site-privacy'} title="Приватность" on:close={() => (sheet = null)}>
 	{#each sitePrivacyKeys as item}
-		<div class="field row bordered">
-			<span class="label">{item.label}</span>
-			<button
-				class="toggle"
-				class:on={$siteProfile?.[item.field]}
-				on:click={() => toggleSitePrivacy(item)}
-				aria-label="Переключить"
-			>
-				<span class="knob"></span>
-			</button>
+		<div class="fgroup">
+			<h3>{item.label}</h3>
+			<div class="chips">
+				{#each item.options as option}
+					<button
+						class="chip small"
+						class:active={sitePrivacyValue(item) === option.value}
+						on:click={() => setSitePrivacy(item, option.value)}
+					>{option.label}</button>
+				{/each}
+			</div>
 		</div>
 	{/each}
 	<p class="hint">
-		Статистику, оценки, историю и списки не отдаёт чужому запросу сама база.
-		Соцсети и счётчики скрываются только в интерфейсе: строка профиля читается
-		всеми, и упорный человек их достанет.
+		Статистика, оценки, история и списки защищены правилами базы. Для соцсетей и
+		счётчиков ограничение применяется в профиле, как в Anixart.
 	</p>
 </Sheet>
 
@@ -923,6 +972,23 @@
 		{/each}
 		<p class="hint">Это подписки на стороне Anixart — они приходят в раздел «События».</p>
 	{/if}
+</Sheet>
+
+<Sheet open={sheet === 'site-notifications'} title="Уведомления AniShiki" on:close={() => (sheet = null)}>
+	{#each siteNotificationToggles as item}
+		<div class="field row bordered">
+			<span class="label">{item.label}</span>
+			<button
+				class="toggle"
+				class:on={$siteProfile?.[item.field] !== false}
+				on:click={() => toggleSiteNotification(item)}
+				aria-label="Переключить"
+			>
+				<span class="knob"></span>
+			</button>
+		</div>
+	{/each}
+	<p class="hint">Заявки в друзья приходят всегда. Подписки действуют для новых событий.</p>
 </Sheet>
 
 <style>

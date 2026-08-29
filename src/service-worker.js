@@ -50,6 +50,30 @@ self.addEventListener('message', (event) => {
 	if (event.data === 'skip-waiting') self.skipWaiting();
 });
 
+// Нативный Web Push (когда сервер его отправит) и локальные уведомления
+// используют одинаковый payload. Это важно для iOS PWA: клик открывает не
+// главную, а конкретный релиз/комментарий даже если приложение было закрыто.
+self.addEventListener('push', (event) => {
+	event.waitUntil(
+		(async () => {
+			let payload = {};
+			try {
+				payload = event.data?.json?.() || {};
+			} catch {
+				payload = { body: event.data?.text?.() || '' };
+			}
+			await self.registration.showNotification(payload.title || 'Событие в AniShiki', {
+				body: payload.body || 'Откройте приложение, чтобы посмотреть подробности.',
+				icon: payload.icon || '/icon-192.png',
+				badge: '/icon-192.png',
+				image: payload.image,
+				tag: payload.tag || `push-${Date.now()}`,
+				data: { url: payload.url || '/notifications' }
+			});
+		})()
+	);
+});
+
 /** Не давать кэшу картинок расти бесконечно. */
 async function trimImages() {
 	const cache = await caches.open(IMAGE_CACHE);

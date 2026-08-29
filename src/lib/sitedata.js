@@ -1,6 +1,8 @@
 import { get } from 'svelte/store';
 import { supabase } from '$lib/supabase';
 import { siteSession } from '$lib/stores/auth';
+import { currentSiteName } from '$lib/stores/auth';
+import { notify } from '$lib/notifications';
 
 // Избранное и история для аккаунта сайта (Supabase). Используются, когда
 // пользователь вошёл через сайт (нет/не используется аккаунт Anixart).
@@ -314,7 +316,7 @@ export async function listComments(releaseId) {
 	}));
 }
 
-export async function addComment(releaseId, text) {
+export async function addComment(releaseId, text, { replyToUserId = null, release = null } = {}) {
 	if (!supabase || !uid()) throw new Error('Нет аккаунта');
 	const { data, error } = await supabase
 		.from('comments')
@@ -322,6 +324,20 @@ export async function addComment(releaseId, text) {
 		.select()
 		.single();
 	if (error) throw error;
+	// У сайта раньше комментарий просто появлялся в базе: автор предыдущего
+	// сообщения о нём не узнавал. Отвечаем ровно адресату, не рассылая всем,
+	// кто когда-либо писал под релизом.
+	if (replyToUserId && replyToUserId !== uid()) {
+		const name = currentSiteName() || 'Пользователь';
+		await notify(replyToUserId, {
+			type: 'comment',
+			title: `${name} ответил(а) на ваш комментарий`,
+			body: text.trim().replace(/\s+/g, ' ').slice(0, 180),
+			releaseId,
+			image: release?.image || null,
+			url: `/release/${releaseId}`
+		});
+	}
 	return data;
 }
 
@@ -410,7 +426,16 @@ const PROFILE_FIELDS = [
 	'is_stats_hidden',
 	'is_counts_hidden',
 	'is_social_hidden',
-	'is_friend_requests_disallowed'
+	'is_friend_requests_disallowed',
+	'privacy_stats',
+	'privacy_counts',
+	'privacy_social',
+	'privacy_friend_requests',
+	'is_episode_notifications_enabled',
+	'is_related_release_notifications_enabled',
+	'is_comment_notifications_enabled',
+	'is_my_collection_comment_notifications_enabled',
+	'is_report_process_notifications_enabled'
 ];
 
 /**

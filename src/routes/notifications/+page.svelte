@@ -6,7 +6,7 @@
 	 * (у Anixart для этого нужен ещё и тип события), ручное обновление и
 	 * запрос разрешения на системные уведомления, если оно ещё не выдано.
 	 */
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { getApi } from '$lib/api';
 	import { userToken, notificationCount, showToast } from '$lib/stores';
 	import { authReady, siteSession } from '$lib/stores/auth';
@@ -15,7 +15,8 @@
 		markAllRead,
 		removeNotification,
 		syncEpisodeNotifications,
-		forceNextSync
+		forceNextSync,
+		watchNotifications
 	} from '$lib/notifications';
 	import { notificationPermission, requestNotifications, standalone } from '$lib/pwa';
 	import { timeAgo } from '$lib/utils';
@@ -55,7 +56,23 @@
 	/* ── аккаунт сайта ── */
 
 	let siteFor = undefined;
+	let watchedFor = undefined;
+	let stopWatching = () => {};
 	$: if ($authReady && siteOnly) loadSite($siteSession?.user?.id ?? null);
+	$: if ($authReady && siteOnly) watchSite($siteSession?.user?.id ?? null);
+
+	function watchSite(userId) {
+		if (userId === watchedFor) return;
+		stopWatching();
+		watchedFor = userId;
+		if (!userId) {
+			stopWatching = () => {};
+			return;
+		}
+		stopWatching = watchNotifications(userId, (row) => {
+			if (!items.some((item) => item.id === row.id)) items = [row, ...items];
+		});
+	}
 
 	async function loadSite(userId, force = false) {
 		if (userId === siteFor && !force) return;
@@ -238,6 +255,7 @@
 	}
 
 	onMount(() => load(true));
+	onDestroy(() => stopWatching());
 </script>
 
 <svelte:head><title>События — AniShiki</title></svelte:head>

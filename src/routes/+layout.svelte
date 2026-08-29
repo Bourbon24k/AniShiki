@@ -12,11 +12,17 @@
 	import SlideMenu from '$lib/components/SlideMenu.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import InstallBanner from '$lib/components/InstallBanner.svelte';
-	import { initPwa, setAppBadge } from '$lib/pwa';
+	import { initPwa, setAppBadge, showLocalNotification } from '$lib/pwa';
 	import { initShell, swipeBack, rememberScroll, recallScroll, standalone } from '$lib/ios';
 	import { authReady, siteSession } from '$lib/stores/auth';
 	import { touchPresence } from '$lib/sitedata';
-	import { unreadCount, syncEpisodeNotifications } from '$lib/notifications';
+	import {
+		listNotifications,
+		syncEpisodeNotifications,
+		watchNotifications,
+		notificationCopy,
+		anixartNotificationCopy
+	} from '$lib/notifications';
 
 	let isMobile = false;
 	let viewport;
@@ -65,7 +71,12 @@
 	/* ── счётчик уведомлений аккаунта сайта ── */
 
 	let badgeFor = undefined;
+	let watchedNotificationsFor = undefined;
+	let stopWatchingNotifications = () => {};
+	let knownSiteNotificationsFor = undefined;
+	let knownSiteNotificationIds = new Set();
 	$: if ($authReady && !$userToken) refreshBadge($siteSession?.user?.id ?? null);
+	$: if ($authReady && !$userToken) watchSiteNotifications($siteSession?.user?.id ?? null);
 	// Отметка «был(а) в сети» для профиля сайта: сама себя придерживает, чтобы
 	// не писать в базу на каждый переход между страницами.
 	$: if ($siteSession) touchPresence().catch(() => {});
@@ -78,7 +89,113 @@
 			return;
 		}
 		await syncEpisodeNotifications().catch(() => {});
-		notificationCount.set(await unreadCount().catch(() => 0));
+		await pollSiteNotifications(userId, { initial: true });
+	}
+
+	/**
+	 * Realtime доставляет мгновенно, но не в каждом старом проекте таблица уже
+	 * включена в publication. Поллинг — рабочая страховка для таких установок,
+	 * а не замена realtime: он не даёт уведомлениям снова «пропасть» молча.
+	 */
+	async function pollSiteNotifications(userId, { initial = false } = {}) {
+		if (!userId || userId !== $siteSession?.user?.id) return;
+		const list = await listNotifications(30).catch(() => []);
+		const first = knownSiteNotificationsFor !== userId;
+		if (first) {
+			knownSiteNotificationsFor = userId;
+			knownSiteNotificationIds = new Set(list.map((row) => row.id));
+		} else {
+			for (const row of list) {
+				if (knownSiteNotificationIds.has(row.id)) continue;
+				knownSiteNotificationIds.add(row.id);
+				if (!initial && document.visibilityState !== 'visible') {
+					const copy = notificationCopy(row);
+					showLocalNotification({
+						title: copy.title,
+						body: copy.body,
+						url: row.url || '/notifications',
+						tag: `site-notification-${row.id}`,
+						image: row.image
+					}).catch(() => {});
+				}
+			}
+		}
+		if (knownSiteNotificationIds.size > 120) {
+			knownSiteNotificationIds = new Set([...knownSiteNotificationIds].slice(-120));
+		}
+		notificationCount.set(list.filter((row) => !row.is_read).length);
+	}
+
+	function watchSiteNotifications(userId) {
+		if (userId === watchedNotificationsFor) return;
+		stopWatchingNotifications();
+		watchedNotificationsFor = userId;
+		if (!userId) {
+			stopWatchingNotifications = () => {};
+			return;
+		}
+		stopWatchingNotifications = watchNotifications(userId, (row) => {
+			knownSiteNotificationsFor = userId;
+			knownSiteNotificationIds.add(row.id);
+			notificationCount.update((count) => count + (row.is_read ? 0 : 1));
+			// Пока человек уже смотрит на приложение, достаточно бейджа. Шторка
+			// ОС нужна именно когда приложение свернули или ушли на другой экран.
+			if (document.visibilityState === 'visible') return;
+			const copy = notificationCopy(row);
+			showLocalNotification({
+				title: copy.title,
+				body: copy.body,
+				url: row.url || '/notifications',
+				tag: `site-notification-${row.id}`,
+				image: row.image
+			}).catch(() => {});
+		});
+	}
+
+	function readSeenAnixart(id) {
+		try {
+			return new Set(JSON.parse(localStorage.getItem(`anixart_notifications_${id}`) || '[]'));
+		} catch {
+			return new Set();
+		}
+	}
+
+	function hasSeenAnixart(id) {
+		try {
+			return localStorage.getItem(`anixart_notifications_${id}`) != null;
+		} catch {
+			return false;
+		}
+	}
+
+	function writeSeenAnixart(id, seen) {
+		try {
+			localStorage.setItem(`anixart_notifications_${id}`, JSON.stringify([...seen].slice(-120)));
+		} catch {
+			/* приватный режим */
+		}
+	}
+
+	async function pollAnixartNotifications({ initial = false } = {}) {
+		if (!$userToken) return;
+		try {
+			const data = await getApi()?.notification?.getNotifications(0);
+			const list = data?.content || [];
+			const seen = readSeenAnixart($userToken.id);
+			const prime = initial || !hasSeenAnixart($userToken.id);
+			for (const row of list) {
+				const key = `${row.type || 'event'}:${row.id}`;
+				if (!prime && !seen.has(key) && document.visibilityState !== 'visible') {
+					const copy = anixartNotificationCopy(row);
+					showLocalNotification({ title: copy.title, body: copy.body, url: copy.url, tag: `anixart-${key}` }).catch(() => {});
+				}
+				seen.add(key);
+			}
+			writeSeenAnixart($userToken.id, seen);
+			if (!initial) notificationCount.set(list.filter((row) => row.is_new).length);
+		} catch (e) {
+			console.warn('anixart notifications', e);
+		}
 	}
 
 	onMount(() => {
@@ -94,17 +211,25 @@
 			setTimeout(() => splash.remove(), 320);
 		}
 
+		const anixartPoll = window.setInterval(() => pollAnixartNotifications(), 90_000);
+		const sitePoll = window.setInterval(() => {
+			if (!$userToken) pollSiteNotifications($siteSession?.user?.id ?? null);
+		}, 60_000);
 		if ($userToken) {
 			const api = getApi();
 			api?.notification
 				?.countNotifications()
 				.then((r) => notificationCount.set(r?.count ?? 0))
 				.catch(() => {});
+			pollAnixartNotifications({ initial: true });
 		}
 		return () => {
 			window.removeEventListener('resize', syncMobile);
 			disposeShell();
 			disposePwa();
+			stopWatchingNotifications();
+			window.clearInterval(anixartPoll);
+			window.clearInterval(sitePoll);
 		};
 	});
 </script>
