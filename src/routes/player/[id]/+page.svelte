@@ -83,6 +83,7 @@
 	// Потребляется при первом выборе источника, чтобы ручной переход по сериям не сикал.
 	let pendingResume = null;
 	let lastProgressSave = 0;
+	const INTRO_FALLBACK_SKIP = 90;
 	const externalPlayerHosts = new Set([
 		'aniliberty.top', 'www.aniliberty.top', 'anilibria.tv', 'www.anilibria.tv',
 		'rutube.ru', 'www.rutube.ru', 'vk.com', 'www.vk.com', 'vkvideo.ru', 'www.vkvideo.ru',
@@ -273,6 +274,10 @@
 	function skipIntro() {
 		if (!videoEl) return;
 		const target = introStop();
+		if (!target) {
+			skip(INTRO_FALLBACK_SKIP);
+			return;
+		}
 		if (target <= currentTime + 0.25) {
 			showToast('Опенинг уже позади', 'info');
 			return;
@@ -283,11 +288,7 @@
 	}
 	function introStop() {
 		const stop = Number(intro?.stop);
-		return Number.isFinite(stop) && stop > 0 ? Math.min(stop, duration || stop) : Math.min(85, duration || 85);
-	}
-	function introStart() {
-		const start = Number(intro?.start);
-		return Number.isFinite(start) && start >= 0 ? start : 4;
+		return Number.isFinite(stop) && stop > 0 ? Math.min(stop, duration || stop) : 0;
 	}
 	function endingStart() {
 		const start = Number(ending?.start);
@@ -297,8 +298,7 @@
 		nextEp();
 	}
 	// Для AniLibria используются точные start/stop из официального API.
-	// У остальных источников остаётся ручной переход к 1:25.
-	$: showSkipIntro = mode !== 'iframe' && duration > 120 && currentTime >= introStart() && currentTime < introStop() - 0.5 && !buffering && !paused;
+	// У остальных источников кнопка ниже перематывает на среднюю длину OP — 90 секунд.
 	$: showSkipEnding = mode !== 'iframe' && duration > 0 && currentTime >= endingStart() && currentTime < duration - 2 && canNext && !buffering;
 	function setVol(v) {
 		if (!videoEl) return;
@@ -882,10 +882,6 @@
 									<button class="an-cancel" on:click={cancelAutoNext}>Отмена</button>
 								</div>
 							</div>
-						{:else if showSkipIntro}
-							<button class="skip-btn" on:click|stopPropagation={skipIntro}>
-								Пропустить опенинг до {fmt(introStop())} <Icon name="chevronRight" size={16} />
-							</button>
 						{:else if showSkipEnding}
 							<button class="skip-btn" on:click|stopPropagation={skipEnding}>
 								Следующая серия <Icon name="chevronRight" size={16} />
@@ -931,6 +927,12 @@
 									<button class="cbtn" on:click={nextEp} disabled={!canNext} title="Следующая (N)">
 										<Icon name="chevronRight" size={22} />
 									</button>
+									<button
+										class="cbtn skip-op"
+										on:click={skipIntro}
+										title={introStop() ? `Пропустить опенинг до ${fmt(introStop())}` : 'Пропустить опенинг на 1:30'}
+										aria-label={introStop() ? 'Пропустить опенинг по таймкоду источника' : 'Пропустить опенинг на 90 секунд'}
+									>OP</button>
 
 									<div class="vol">
 										<button class="cbtn" on:click={toggleMute} aria-label="Звук">
@@ -981,10 +983,6 @@
 															<button class:active={r === rate} on:click={() => setRate(r)}>{r}×</button>
 														{/each}
 													</div>
-												</div>
-												<div class="msec">
-													<span class="mlabel">Опенинг {intro?.stop ? '— таймкод источника' : '— вручную'}</span>
-													<button class="skip-setting" on:click={skipIntro}>Пропустить до {fmt(introStop())}</button>
 												</div>
 												<div class="msec">
 													<span class="mlabel">Плеер</span>
@@ -1277,19 +1275,6 @@
 		border-color: transparent;
 		transform: translateY(-2px);
 	}
-	.skip-setting {
-		width: 100%;
-		padding: 9px 10px;
-		border: 1px solid rgba(255, 255, 255, 0.14);
-		border-radius: 9px;
-		background: rgba(255, 255, 255, 0.08);
-		color: #fff;
-		font: inherit;
-		font-size: 13px;
-		font-weight: 650;
-		cursor: pointer;
-	}
-	.skip-setting:hover { background: var(--primary-color); border-color: var(--primary-color); }
 	@media (max-width: 768px) {
 		.skip-btn {
 			right: 14px;
@@ -1514,6 +1499,16 @@
 	.cbtn.on {
 		color: var(--primary-color);
 	}
+	.skip-op {
+		width: auto;
+		min-width: 38px;
+		padding: 0 8px;
+		font-size: 11px;
+		font-weight: 850;
+		letter-spacing: 0.04em;
+		color: #fff;
+	}
+	.skip-op:hover { color: var(--primary-color); }
 	.cbtn:disabled {
 		opacity: 0.35;
 		cursor: not-allowed;
