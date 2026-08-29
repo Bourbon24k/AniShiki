@@ -38,10 +38,13 @@
 	let selectedEpisode = null;
 
 	let videoUrl = '';
-	let mode = 'video'; // 'native' (m3u8 из Kodik) | 'video' (прямой mp4/m3u8) | 'iframe' (фолбэк)
+	let mode = 'video'; // 'native' (извлечённый HLS) | 'video' (прямой mp4/m3u8) | 'iframe' (оригинальный плеер)
 	let qualities = {};
 	let currentQuality = '';
 	let extractError = false;
+	let streamProvider = '';
+	let intro = null;
+	let ending = null;
 	let loadingEpisodes = false;
 	let loadingVideo = false;
 	let panelOpen = true;
@@ -80,6 +83,11 @@
 	// Потребляется при первом выборе источника, чтобы ручной переход по сериям не сикал.
 	let pendingResume = null;
 	let lastProgressSave = 0;
+	const externalPlayerHosts = new Set([
+		'aniliberty.top', 'www.aniliberty.top', 'anilibria.tv', 'www.anilibria.tv',
+		'rutube.ru', 'www.rutube.ru', 'vk.com', 'www.vk.com', 'vkvideo.ru', 'www.vkvideo.ru',
+		'ok.ru', 'www.ok.ru', 'video.sibnet.ru'
+	]);
 
 	const progressKey = () => `progress:${releaseId}`;
 	function readLocalProgress() {
@@ -263,14 +271,35 @@
 		showControlsTemp();
 	}
 	function skipIntro() {
-		skip(85);
+		if (!videoEl) return;
+		const target = introStop();
+		if (target <= currentTime + 0.25) {
+			showToast('Опенинг уже позади', 'info');
+			return;
+		}
+		videoEl.currentTime = target;
+		emitSync('seek');
+		showControlsTemp();
+	}
+	function introStop() {
+		const stop = Number(intro?.stop);
+		return Number.isFinite(stop) && stop > 0 ? Math.min(stop, duration || stop) : Math.min(85, duration || 85);
+	}
+	function introStart() {
+		const start = Number(intro?.start);
+		return Number.isFinite(start) && start >= 0 ? start : 4;
+	}
+	function endingStart() {
+		const start = Number(ending?.start);
+		return Number.isFinite(start) && start >= 0 ? start : Math.max(0, duration - 150);
 	}
 	function skipEnding() {
 		nextEp();
 	}
-	// Кнопки пропуска (нет тайм-кодов от Kodik → эвристика по времени)
-	$: showSkipIntro = mode !== 'iframe' && duration > 120 && currentTime > 4 && currentTime < 110 && !buffering && !paused;
-	$: showSkipEnding = mode !== 'iframe' && duration > 0 && currentTime > duration - 150 && currentTime < duration - 2 && canNext && !buffering;
+	// Для AniLibria используются точные start/stop из официального API.
+	// У остальных источников остаётся ручной переход к 1:25.
+	$: showSkipIntro = mode !== 'iframe' && duration > 120 && currentTime >= introStart() && currentTime < introStop() - 0.5 && !buffering && !paused;
+	$: showSkipEnding = mode !== 'iframe' && duration > 0 && currentTime >= endingStart() && currentTime < duration - 2 && canNext && !buffering;
 	function setVol(v) {
 		if (!videoEl) return;
 		videoEl.volume = v;
@@ -329,6 +358,14 @@
 	}
 	function isKodik(u) {
 		return /kodik|aniqit|anivod/i.test(u || '');
+	}
+	function isExternalPlayer(u) {
+		try {
+			const host = new URL(String(u || '').startsWith('//') ? `https:${u}` : u).hostname;
+			return externalPlayerHosts.has(host);
+		} catch {
+			return false;
+		}
 	}
 	$: qualityKeys = Object.keys(qualities).sort((a, b) => Number(b) - Number(a));
 	$: curIndex = selectedEpisode
@@ -496,6 +533,9 @@
 		qualities = {};
 		currentQuality = '';
 		extractError = false;
+		streamProvider = '';
+		intro = null;
+		ending = null;
 		destroyHls();
 		try {
 			let u = selectedEpisode.url || '';
@@ -514,6 +554,7 @@
 					if (!d.qualities || !Object.keys(d.qualities).length) throw new Error('empty');
 					qualities = d.qualities;
 					currentQuality = pickQuality();
+					streamProvider = 'Kodik';
 					mode = 'native';
 					videoUrl = qualities[currentQuality];
 				} catch (e) {
@@ -525,6 +566,25 @@
 			} else if (isDirect(u)) {
 				mode = 'video';
 				videoUrl = u;
+			} else if (isExternalPlayer(u)) {
+				try {
+					const r = await fetch(`/api/source?url=${encodeURIComponent(u)}`);
+					if (!r.ok) throw new Error('extract ' + r.status);
+					const d = await r.json();
+					if (!d.qualities || !Object.keys(d.qualities).length) throw new Error('empty');
+					qualities = d.qualities;
+					currentQuality = d.default && d.qualities[d.default] ? d.default : pickQuality();
+					streamProvider = d.provider || selectedSource?.name || 'источник';
+					intro = d.intro || null;
+					ending = d.ending || null;
+					mode = 'native';
+					videoUrl = qualities[currentQuality];
+				} catch (e) {
+					console.warn('external extract failed → iframe', e);
+					extractError = true;
+					mode = 'iframe';
+					videoUrl = u;
+				}
 			} else {
 				mode = 'iframe';
 				videoUrl = u;
@@ -824,7 +884,7 @@
 							</div>
 						{:else if showSkipIntro}
 							<button class="skip-btn" on:click|stopPropagation={skipIntro}>
-								Пропустить опенинг <Icon name="chevronRight" size={16} />
+								Пропустить опенинг до {fmt(introStop())} <Icon name="chevronRight" size={16} />
 							</button>
 						{:else if showSkipEnding}
 							<button class="skip-btn" on:click|stopPropagation={skipEnding}>
@@ -923,10 +983,14 @@
 													</div>
 												</div>
 												<div class="msec">
+													<span class="mlabel">Опенинг {intro?.stop ? '— таймкод источника' : '— вручную'}</span>
+													<button class="skip-setting" on:click={skipIntro}>Пропустить до {fmt(introStop())}</button>
+												</div>
+												<div class="msec">
 													<span class="mlabel">Плеер</span>
 													<div class="mopts">
-														<button class:active={!forceIframe} on:click={() => setIframe(false)}>Без рекламы</button>
-														<button class:active={forceIframe} on:click={() => setIframe(true)}>Встроенный</button>
+														<button class:active={!forceIframe} on:click={() => setIframe(false)}>Свой</button>
+														<button class:active={forceIframe} on:click={() => setIframe(true)}>Оригинальный</button>
 													</div>
 												</div>
 											</div>
@@ -1043,13 +1107,14 @@
 				<h3>Плеер</h3>
 				<div class="seg">
 					<button class="seg-btn" class:active={!forceIframe} on:click={() => setIframe(false)}>
-						⚡ Без рекламы
+						⚡ Свой плеер
 					</button>
 					<button class="seg-btn" class:active={forceIframe} on:click={() => setIframe(true)}>
-						Встроенный
+						Оригинальный
 					</button>
 				</div>
-				<p class="seg-hint">«Встроенный» — плеер Kodik с рекламой; включите, если прямой поток не грузится.</p>
+				{#if streamProvider}<p class="seg-hint">Поток: {streamProvider}.</p>{/if}
+				<p class="seg-hint">«Оригинальный» включайте, если поток не открылся в браузере.</p>
 			</div>
 		</aside>
 	</div>
@@ -1212,6 +1277,19 @@
 		border-color: transparent;
 		transform: translateY(-2px);
 	}
+	.skip-setting {
+		width: 100%;
+		padding: 9px 10px;
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		border-radius: 9px;
+		background: rgba(255, 255, 255, 0.08);
+		color: #fff;
+		font: inherit;
+		font-size: 13px;
+		font-weight: 650;
+		cursor: pointer;
+	}
+	.skip-setting:hover { background: var(--primary-color); border-color: var(--primary-color); }
 	@media (max-width: 768px) {
 		.skip-btn {
 			right: 14px;

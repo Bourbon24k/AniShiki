@@ -27,8 +27,8 @@ npm run check    # svelte-kit sync && svelte-check
 
 Неофициальный веб-клиент Anixart. `adapter-static` + `ssr = false` (`src/routes/+layout.js`) —
 чистая SPA, всё выполняется в браузере, сервера у приложения нет. Единственный серверный
-кусок — `api/kodik.js` (Vercel serverless, распаковка плеера Kodik); в dev его подменяет
-middleware из `vite.config.js`.
+кусок — Vercel-функции в `api/`: `kodik.js` распаковывает Kodik, а `source.js` получает
+прямые потоки известных внешних плееров. В dev их подменяет middleware из `vite.config.js`.
 
 Данные идут из браузера напрямую в API Anixart. При CORS-ограничениях сервер меняется в
 Настройках (`api.anixart.app` ↔ `api-s.anixsekai.com`), в dev есть прокси `/anixart-proxy`.
@@ -112,6 +112,13 @@ keyed-блок делайте так же.
 фиксируются в момент «На экран Домой», поэтому изменения `apple-mobile-web-app-*` видны
 только после переустановки ярлыка.
 
+**Плеер.** API Anixart возвращает только ссылку на iframe эпизода и не отдаёт таймкоды
+опенинга. Свой плеер сначала пробует прямой поток: Kodik через `api/kodik.js`, а AniLibria,
+RuTube, VK, OK и Sibnet — через `api/source.js`. Если источник не поддержан или поток не
+получен, остаётся режим «Оригинальный». В `api/_lib/source.mjs` жёсткий список доменов — не
+ослабляйте его, иначе endpoint станет открытым прокси. Для AniLibria официальный API отдаёт
+точные `opening.start/stop`; у остальных источников кнопка в настройках перематывает на 1:25.
+
 ## Карта библиотек
 
 ```
@@ -130,6 +137,11 @@ src/lib/
   stores/
     index.js      persisted-сторы в localStorage: токен, тема, плеер, эндпоинт
     auth.js       сессия и профиль аккаунта сайта
+
+api/
+  kodik.js        серверное извлечение HLS Kodik
+  source.js       серверное извлечение известных внешних плееров
+  _lib/source.mjs whitelist провайдеров, AniLibria-метаданные опенинга
 ```
 
 Компоненты, которые стоит переиспользовать, а не дублировать: `ProfileView`,
