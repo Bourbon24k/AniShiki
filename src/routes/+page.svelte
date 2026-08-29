@@ -19,10 +19,10 @@
 	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	const year = new Date().getFullYear();
-	// Hero и «Сейчас популярно» — реальная популярность (sort 3), суженная до
-	// текущего и прошлого года: sort 1 — это «по оценке», вечный топ, где
-	// «сейчас» нет вообще (в выдаче висят тайтлы 1999–2000 годов).
-	const POPULAR = { sort: 3, start_year: year - 1, end_year: year };
+	// Hero и витрина — реальная популярность (sort 3) только среди новинок
+	// текущего года. Прошлый год здесь намеренно не берём: он вытеснял свежие
+	// релизы прошедшими хитами вроде «Поднятия уровня в одиночку 2».
+	const POPULAR_NEW = { sort: 3, start_year: year, end_year: year };
 
 	let popular = [];
 	let heroLoading = true;
@@ -41,7 +41,7 @@
 		heroLoading = true;
 		try {
 			// Отдаёт кэш сразу и тихо обновляет его в фоне.
-			popular = await catalogPageLive(POPULAR, 0, (fresh) => {
+			popular = await catalogPageLive(POPULAR_NEW, 0, (fresh) => {
 				if (fresh?.length) popular = fresh;
 			});
 			if (!popular.length) failed = true;
@@ -145,11 +145,11 @@
 	{/if}
 
 	<ReleaseRow
-		title="Сейчас популярно"
+		title="Популярные новинки"
 		items={popular}
 		loading={heroLoading && !popular.length}
 		numbered
-		href="/search?type=5"
+		href={`/search?year=${year}`}
 	/>
 
 	<LazyRow title="Онгоинги" href="/search?type=1" load={() => catalogPageLive({ sort: 0, status_id: 2 }, 0)} />
