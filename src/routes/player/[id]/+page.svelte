@@ -85,6 +85,7 @@
 	let pendingResume = null;
 	let lastProgressSave = 0;
 	const INTRO_FALLBACK_SKIP = 90;
+	const INTRO_PROMPT_SECONDS = 12;
 	const externalPlayerHosts = new Set([
 		'aniliberty.top', 'www.aniliberty.top', 'anilibria.tv', 'www.anilibria.tv',
 		'rutube.ru', 'www.rutube.ru', 'vk.com', 'www.vk.com', 'vkvideo.ru', 'www.vkvideo.ru',
@@ -317,6 +318,14 @@
 		const stop = Number(intro?.stop);
 		return Number.isFinite(stop) && stop > 0 ? Math.min(stop, duration || stop) : 0;
 	}
+	function introPromptStart() {
+		const start = Number(intro?.start);
+		return introStop() && Number.isFinite(start) && start >= 0 ? start : 4;
+	}
+	function introPromptEnd() {
+		const stop = introStop();
+		return stop ? Math.min(stop, introPromptStart() + INTRO_PROMPT_SECONDS) : 4 + INTRO_PROMPT_SECONDS;
+	}
 	function endingStart() {
 		const start = Number(ending?.start);
 		return Number.isFinite(start) && start >= 0 ? start : Math.max(0, duration - 150);
@@ -324,8 +333,9 @@
 	function skipEnding() {
 		nextEp();
 	}
-	// Для AniLibria используются точные start/stop из официального API.
-	// У остальных источников кнопка ниже перематывает на среднюю длину OP — 90 секунд.
+	// Точная кнопка появляется в начале реального OP, а при отсутствии метаданных —
+	// коротко в начале серии. Нижняя OP-кнопка остаётся доступна всегда.
+	$: showSkipIntro = mode !== 'iframe' && duration > 0 && currentTime >= introPromptStart() && currentTime < introPromptEnd() && !buffering && !paused;
 	$: showSkipEnding = mode !== 'iframe' && duration > 0 && currentTime >= endingStart() && currentTime < duration - 2 && canNext && !buffering;
 	function setVol(v) {
 		if (!videoEl) return;
@@ -909,6 +919,10 @@
 									<button class="an-cancel" on:click={cancelAutoNext}>Отмена</button>
 								</div>
 							</div>
+						{:else if showSkipIntro}
+							<button class="skip-btn" on:click|stopPropagation={skipIntro}>
+								Пропустить опенинг <Icon name="chevronRight" size={16} />
+							</button>
 						{:else if showSkipEnding}
 							<button class="skip-btn" on:click|stopPropagation={skipEnding}>
 								Следующая серия <Icon name="chevronRight" size={16} />
